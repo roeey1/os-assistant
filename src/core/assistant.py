@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
 from src.backend.tools.files import FileManager
+from src.backend.tools.system_ops import SystemOps
+from src.backend.tools.sys_info import SystemInfo
 
 
 class OSAssistant:
     def __init__(self):
         self.files = FileManager()
+        self.sys_ops = SystemOps()
+        self.sys_info = SystemInfo()
 
     def execute_intent(self, intent: dict) -> str:
         """
@@ -38,7 +42,7 @@ class OSAssistant:
             # =======================================================
 
             # --- Group A: Actions requiring the item to EXIST ---
-            if action in ['read_file', 'open_file', 'get_file_info', 'rename_item']:
+            if action in ['read_file', 'open_file', 'get_file_info', 'rename_item', 'show_file_properties']:
                 if resolved_path == "NOT FOUND":
                     return f"Error: File or item '{intent.get('path')}' not found."
 
@@ -52,8 +56,8 @@ class OSAssistant:
                     # Assume creating new file relative to Home
                     resolved_path = Path.home() / intent['path']
 
-            # --- Group C: Listing (Default to Home if path empty/not found) ---
-            elif action == 'list_directory':
+            # --- Group C: Listing / Disk Usage (Default to Home/Root if path empty/not found) ---
+            elif action in ['list_directory', 'get_disk_usage']:
                 if resolved_path == "NOT FOUND":
                     resolved_path = Path.home()
 
@@ -67,10 +71,16 @@ class OSAssistant:
                 if resolved_dst == "NOT FOUND":
                     resolved_dst = Path.home() / intent['destination']
 
+            # --- Group E: Application Ops (Require app_name) ---
+            elif action in ['open_app', 'close_app']:
+                if not intent.get('app_name'):
+                    return f"Error: Action '{action}' requires an 'app_name' parameter."
+
             # =======================================================
             # 3. EXECUTE ACTIONS (Clean Calls)
             # =======================================================
 
+            # --- FILE OPS ---
             if action == 'move_file':
                 print(f"DEBUG: Move {resolved_src} -> {resolved_dst}")
                 return self.files.move_file(str(resolved_src), str(resolved_dst))
@@ -100,6 +110,45 @@ class OSAssistant:
 
             elif action == 'get_file_info':
                 return self.files.get_file_info(str(resolved_path))
+
+            # --- SYSTEM OPS (Active) ---
+            elif action == 'open_app':
+                return self.sys_ops.open_app(intent['app_name'])
+
+            elif action == 'close_app':
+                return self.sys_ops.close_app(intent['app_name'])
+
+            elif action == 'open_settings':
+                return self.sys_ops.open_settings()
+
+            elif action == 'close_settings':
+                return self.sys_ops.close_settings()
+
+            elif action == 'show_file_properties':
+                return self.sys_ops.show_file_properties(str(resolved_path))
+
+            elif action == 'close_file_properties':
+                return self.sys_ops.close_file_properties()
+
+            elif action == 'get_trash_items':
+                return self.sys_ops.get_trash_items()
+
+            # --- SYSTEM INFO (Passive) ---
+            elif action == 'get_system_specs':
+                # Convert dict to string for LLM readability
+                return str(self.sys_info.get_system_specs())
+
+            elif action == 'get_disk_usage':
+                # Uses resolved_path (defaults to Home if not provided)
+                return self.sys_info.get_disk_usage(str(resolved_path))
+
+            elif action == 'get_user_context':
+                return str(self.sys_info.get_user_context())
+
+            elif action == 'get_running_processes':
+                # Optional: You could check intent for a 'limit' parameter
+                limit = intent.get('limit', 20)
+                return self.sys_info.get_running_processes(limit=limit)
 
             else:
                 return f"Error: Unknown action '{action}'."
