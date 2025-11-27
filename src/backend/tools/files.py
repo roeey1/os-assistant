@@ -45,36 +45,56 @@ class FileManager:
 
     def copy_file(self, source: str, destination: str) -> str:
         """
-        Copies a file from source to destination, preserving metadata.
+        Copies a file from source to destination.
         """
         src_path = Path(source)
         dst_path = Path(destination)
 
+        # 1. Validation
         if not src_path.exists():
-            raise FileNotFoundError(f"Source file '{source}' not found.")
+            raise FileNotFoundError(f"Source file '{src_path.name}' not found.")
 
-        # If destination is a directory, copy into it
-        if dst_path.is_dir():
-            shutil.copy2(str(src_path), str(dst_path))
-            return f"Success: Copied '{src_path.name}' into '{destination}'"
+        # 2. Smart Destination Handling (The Fix)
+        # If source has an extension (.pptx) but destination doesn't (e.g. "backup")
+        # we assume "backup" is a FOLDER, not a new filename.
+        if src_path.suffix and not dst_path.suffix:
+            if not dst_path.exists():
+                dst_path.mkdir(parents=True, exist_ok=True)
 
+        # 3. Ensure parent directory for destination exists (if dst is a file path)
+        if dst_path.suffix and not dst_path.parent.exists():
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 4. Execute Copy
+        # shutil.copy2 handles copying a file INTO a folder automatically
         shutil.copy2(str(src_path), str(dst_path))
-        return f"Success: Copied '{source}' to '{destination}'"
+
+        return f"Success: Copied '{src_path.name}' to '{destination}'"
 
     # --- 2. MOVING & RENAMING ---
 
     def move_file(self, source: str, destination: str) -> str:
         """
-        Moves a file or folder from source to destination.
+        Moves a file from source to destination.
         """
         src_path = Path(source)
         dst_path = Path(destination)
 
+        # 1. Validation
         if not src_path.exists():
-            raise FileNotFoundError(f"Source '{source}' not found.")
+            raise FileNotFoundError(f"Source file '{src_path.name}' not found.")
 
+        # 2. Smart Destination Handling (The Fix)
+        # If source is a file (has extension) and dest looks like a folder (no extension)
+        # We treat dest as a directory.
+        if src_path.suffix and not dst_path.suffix:
+            if not dst_path.exists():
+                dst_path.mkdir(parents=True, exist_ok=True)
+
+        # 3. Execute Move
         shutil.move(str(src_path), str(dst_path))
-        return f"Success: Moved '{source}' to '{destination}'"
+
+        return f"Success: Moved '{src_path.name}' to '{dst_path.name}'"
 
     def rename_item(self, old_path: str, new_name: str) -> str:
         """
