@@ -1,0 +1,272 @@
+[
+  {
+    "id": 1,
+    "user_prompt": "plz crte a file namd data.txt in documents",
+    "mistake_type": "Typo & Slang",
+    "expected_json": {
+      "tool": "create_file",
+      "args": { "path": "~/Documents/data.txt", "content": "" }
+    }
+  },
+  {
+    "id": 2,
+    "user_prompt": "Move generated_report.pdf from downloads folder to the music folder",
+    "mistake_type": "Logical mismatch (Music folder for PDF)",
+    "expected_json": {
+      "tool": "move_file",
+      "args": { "source": "~/Downloads/generated_report.pdf", "destination": "~/Music/" }
+    }
+  },
+  {
+    "id": 3,
+    "user_prompt": "list evrything inside my downloads",
+    "mistake_type": "Typo",
+    "expected_json": {
+      "tool": "list_directory",
+      "args": { "path": "~/Downloads" }
+    }
+  },
+  {
+    "id": 4,
+    "user_prompt": "make directory 'Holiday Photos' in pictures",
+    "mistake_type": "Phrasing (Make vs Create)",
+    "expected_json": {
+      "tool": "create_folder",
+      "args": { "path": "~/Pictures/Holiday Photos" }
+    }
+  },
+  {
+    "id": 5,
+    "user_prompt": "delete that old log.txt file form desktop",
+    "mistake_type": "Typo (form vs from)",
+    "expected_json": {
+      "tool": "delete_file",
+      "args": { "path": "~/Desktop/log.txt" }
+    }
+  },
+  {
+    "id": 6,
+    "user_prompt": "whats the size of the C drive?",
+    "mistake_type": "Standard Query",
+    "expected_json": {
+      "tool": "get_disk_usage",
+      "args": { "path": "C:" }
+    }
+  },
+  {
+    "id": 7,
+    "user_prompt": "copi config.ini to backup folder",
+    "mistake_type": "Typo",
+    "expected_json": {
+      "tool": "copy_file",
+      "args": { "source": "config.ini", "destination": "./backup/" }
+    }
+  },
+  {
+    "id": 8,
+    "user_prompt": "Rename the file resume.docx to resume_final.docx inside Documents",
+    "mistake_type": "Complex Instruction",
+    "expected_json": {
+      "tool": "rename_file",
+      "args": { "old_path": "~/Documents/resume.docx", "new_path": "~/Documents/resume_final.docx" }
+    }
+  },
+  {
+    "id": 9,
+    "user_prompt": "shw me files in /var/log",
+    "mistake_type": "Abbreviation (shw)",
+    "expected_json": {
+      "tool": "list_directory",
+      "args": { "path": "/var/log" }
+    }
+  },
+  {
+    "id": 10,
+    "user_prompt": "throw away the temporary folder in Downloads",
+    "mistake_type": "Idiom (throw away = delete)",
+    "expected_json": {
+      "tool": "delete_file",
+      "args": { "path": "~/Downloads/temporary" }
+    }
+  },
+  {
+    "id": 11,
+    "user_prompt": "check space on D:",
+    "mistake_type": "Terse Command",
+    "expected_json": {
+      "tool": "get_disk_usage",
+      "args": { "path": "D:" }
+    }
+  },
+  {
+    "id": 12,
+    "user_prompt": "new text file hello.txt with content 'world'",
+    "mistake_type": "Implicit Location (assume current dir)",
+    "expected_json": {
+      "tool": "create_file",
+      "args": { "path": "./hello.txt", "content": "world" }
+    }
+  },
+  {
+    "id": 13,
+    "user_prompt": "i want to duplycate image.png to image_copy.png",
+    "mistake_type": "Typo (duplycate)",
+    "expected_json": {
+      "tool": "copy_file",
+      "args": { "source": "image.png", "destination": "image_copy.png" }
+    }
+  },
+  {
+    "id": 14,
+    "user_prompt": "changename of my_song.mp3 to fav_song.mp3",
+    "mistake_type": "Run-on word (changename)",
+    "expected_json": {
+      "tool": "rename_file",
+      "args": { "old_path": "my_song.mp3", "new_path": "fav_song.mp3" }
+    }
+  },
+  {
+    "id": 15,
+    "user_prompt": "get rid of secret.txt",
+    "mistake_type": "Slang (get rid of)",
+    "expected_json": {
+      "tool": "delete_file",
+      "args": { "path": "secret.txt" }
+    }
+  },
+  {
+    "id": 16,
+    "user_prompt": "create a folder called 'New Project' on the dsktopp",
+    "mistake_type": "Typo (dsktopp)",
+    "expected_json": {
+      "tool": "create_folder",
+      "args": { "path": "~/Desktop/New Project" }
+    }
+  },
+  {
+    "id": 17,
+    "user_prompt": "list stuffs in Music",
+    "mistake_type": "Grammar (stuffs)",
+    "expected_json": {
+      "tool": "list_directory",
+      "args": { "path": "~/Music" }
+    }
+  },
+  {
+    "id": 18,
+    "user_prompt": "transfer file.txt into the archive folder",
+    "mistake_type": "Synonym (transfer = move)",
+    "expected_json": {
+      "tool": "move_file",
+      "args": { "source": "file.txt", "destination": "./archive/" }
+    }
+  },
+  {
+    "id": 19,
+    "user_prompt": "how heavy is the Users folder?",
+    "mistake_type": "Metaphor (heavy = size)",
+    "expected_json": {
+      "tool": "get_disk_usage",
+      "args": { "path": "~/Users" }
+    }
+  },
+  {
+    "id": 20,
+    "user_prompt": "write a python script main.py that prints hello",
+    "mistake_type": "Content Generation",
+    "expected_json": {
+      "tool": "create_file",
+      "args": { "path": "main.py", "content": "print('hello')" }
+    }
+  },
+  {
+    "id": 21,
+    "user_prompt": "cpy notes.txt ../",
+    "mistake_type": "CLI style shorthand",
+    "expected_json": {
+      "tool": "copy_file",
+      "args": { "source": "notes.txt", "destination": "../" }
+    }
+  },
+  {
+    "id": 22,
+    "user_prompt": "what are the contents of docs?",
+    "mistake_type": "Natural Language Question",
+    "expected_json": {
+      "tool": "list_directory",
+      "args": { "path": "~/Documents" }
+    }
+  },
+  {
+    "id": 23,
+    "user_prompt": "Please wipe the cache folder",
+    "mistake_type": "Polite + Slang (wipe)",
+    "expected_json": {
+      "tool": "delete_file",
+      "args": { "path": "./cache" }
+    }
+  },
+  {
+    "id": 24,
+    "user_prompt": "mv report.doc to reports/",
+    "mistake_type": "Unix Command (mv)",
+    "expected_json": {
+      "tool": "move_file",
+      "args": { "source": "report.doc", "destination": "reports/" }
+    }
+  },
+  {
+    "id": 25,
+    "user_prompt": "make a new folder named '2025 Plans'",
+    "mistake_type": "Implicit Path",
+    "expected_json": {
+      "tool": "create_folder",
+      "args": { "path": "./2025 Plans" }
+    }
+  },
+  {
+    "id": 26,
+    "user_prompt": "change title of old.txt to new.txt",
+    "mistake_type": "Wrong Terminology (title vs name)",
+    "expected_json": {
+      "tool": "rename_file",
+      "args": { "old_path": "old.txt", "new_path": "new.txt" }
+    }
+  },
+  {
+    "id": 27,
+    "user_prompt": "is there enough space on E: drive?",
+    "mistake_type": "Yes/No Question",
+    "expected_json": {
+      "tool": "get_disk_usage",
+      "args": { "path": "E:" }
+    }
+  },
+  {
+    "id": 28,
+    "user_prompt": "clone this file.jpg to backup.jpg",
+    "mistake_type": "Git Terminology (clone = copy)",
+    "expected_json": {
+      "tool": "copy_file",
+      "args": { "source": "file.jpg", "destination": "backup.jpg" }
+    }
+  },
+  {
+    "id": 29,
+    "user_prompt": "cr8 file log.json",
+    "mistake_type": "Leet Speak (cr8)",
+    "expected_json": {
+      "tool": "create_file",
+      "args": { "path": "log.json", "content": "" }
+    }
+  },
+  {
+    "id": 30,
+    "user_prompt": "Put the file vacation.png into the Photos folder",
+    "mistake_type": "Vague Verb (Put)",
+    "expected_json": {
+      "tool": "move_file",
+      "args": { "source": "vacation.png", "destination": "~/Photos/" }
+    }
+  }
+]
