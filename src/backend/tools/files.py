@@ -1,8 +1,10 @@
 import os
 import shutil
+import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Union
+from typing import Dict, Union, List
 
 
 class FileManager:
@@ -11,45 +13,39 @@ class FileManager:
     NOTE: This class assumes permissions have already been checked by the Safety layer.
     """
 
+    # --- 1. FILE CREATION & COPYING ---
+
     def create_file(self, path: str, content: str = "") -> str:
         """
         Creates a new file with the specified content.
-        Raises an error if the file already exists to prevent accidental overwrites.
+        Raises an error if the file already exists.
         """
         file_path = Path(path)
-
-        # 1. Check if file already exists
         if file_path.exists():
             raise FileExistsError(f"The file '{path}' already exists.")
 
-        # 2. Ensure the parent directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 3. Write content
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
         return f"Success: File created at {file_path.absolute()}"
 
-    def move_file(self, source: str, destination: str) -> str:
+    def create_folder(self, path: str) -> str:
         """
-        Moves a file from source to destination.
+        Creates a new folder (and parent folders if needed).
         """
-        src_path = Path(source)
-        dst_path = Path(destination)
+        folder_path = Path(path)
 
-        if not src_path.exists():
-            raise FileNotFoundError(f"Source file '{source}' not found.")
+        if folder_path.exists():
+            return f"Info: The folder '{path}' already exists."
 
-        # shutil.move handles both files and directories
-        shutil.move(str(src_path), str(dst_path))
-
-        return f"Success: Moved '{source}' to '{destination}'"
+        folder_path.mkdir(parents=True, exist_ok=True)
+        return f"Success: Folder created at {folder_path.absolute()}"
 
     def copy_file(self, source: str, destination: str) -> str:
         """
-        Copies a file from source to destination.
-        Preserves metadata (timestamps) using copy2.
+        Copies a file from source to destination, preserving metadata.
         """
         src_path = Path(source)
         dst_path = Path(destination)
@@ -57,14 +53,136 @@ class FileManager:
         if not src_path.exists():
             raise FileNotFoundError(f"Source file '{source}' not found.")
 
-        # copy2 preserves file metadata (creation time, etc)
-        shutil.copy2(str(src_path), str(dst_path))
+        # If destination is a directory, copy into it
+        if dst_path.is_dir():
+            shutil.copy2(str(src_path), str(dst_path))
+            return f"Success: Copied '{src_path.name}' into '{destination}'"
 
+        shutil.copy2(str(src_path), str(dst_path))
         return f"Success: Copied '{source}' to '{destination}'"
+
+    # --- 2. MOVING & RENAMING ---
+
+    def move_file(self, source: str, destination: str) -> str:
+        """
+        Moves a file or folder from source to destination.
+        """
+        src_path = Path(source)
+        dst_path = Path(destination)
+
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source '{source}' not found.")
+
+        shutil.move(str(src_path), str(dst_path))
+        return f"Success: Moved '{source}' to '{destination}'"
+
+    def rename_item(self, old_path: str, new_name: str) -> str:
+        """
+        Renames a file or folder in place.
+        """
+        target_path = Path(old_path)
+
+        if not target_path.exists():
+            raise FileNotFoundError(f"Item '{old_path}' not found.")
+
+        # Create the new full path (keeping the same parent directory)
+        new_path = target_path.parent / new_name
+
+        if new_path.exists():
+            raise FileExistsError(f"Cannot rename. An item named '{new_name}' already exists in this location.")
+
+        target_path.rename(new_path)
+        return f"Success: Renamed '{target_path.name}' to '{new_name}'"
+
+    # --- 3. READING & LISTING ---
+
+    def list_directory(self, path: str) -> str:
+        """
+        Lists the contents of a directory.
+        Returns a formatted string distinguishing files from folders.
+        """
+        target_path = Path(path)
+
+        if not target_path.exists():
+            raise FileNotFoundError(f"Directory '{path}' not found.")
+        if not target_path.is_dir():
+            raise NotADirectoryError(f"'{path}' is not a directory.")
+
+        items = []
+        try:
+            # Sort: Folders first, then files
+            for item in sorted(target_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                # Add a slash to folders so LLM knows it's a dir
+                name = f"{item.name}/" if item.is_dir() else item.name
+                items.append(name)
+        except PermissionError:
+            raise PermissionError(f"Permission denied accessing '{path}'.")
+
+        if not items:
+            return "Directory is empty."
+
+        # Return as a simple comma-separated list or JSON-like string
+        return f"Contents of '{target_path.name}': {', '.join(items)}"
+
+    def read_file(self, path: str, max_chars: int = 2000) -> str:
+        """
+        Reads the text content of a file.
+        Limits output to `max_chars` to prevent LLM overflow.
+        """
+        target_path = Path(path)
+
+        if not target_path.exists():
+            raise FileNotFoundError(f"File '{path}' not found.")
+        if target_path.is_dir():
+            raise IsADirectoryError(f"'{path}' is a directory, not a text file.")
+
+        try:
+            # Check size first (if > 10MB, reject immediately)
+            if target_path.stat().st_size > 10 * 1024 * 1024:
+                return "Error: File is too large to read (over 10MB)."
+
+            with open(target_path, 'r', encoding='utf-8') as f:
+                content = f.read(max_chars)
+
+            # Check if we truncated
+            if len(content) == max_chars:
+                content += "\n...[Content Truncated]..."
+
+            return content
+
+        except UnicodeDecodeError:
+            return "Error: Unable to read file. It appears to be binary (image, exe, etc)."
+        except Exception as e:
+            return f"Error reading file: {str(e)}"
+
+    def open_file(self, path: str) -> str:
+        """
+        Opens the file in the default OS application.
+        (e.g., Preview for images, Word for docs).
+        """
+        target_path = Path(path)
+
+        if not target_path.exists():
+            raise FileNotFoundError(f"File '{path}' not found.")
+
+        try:
+            current_os = platform.system()
+
+            if current_os == 'Darwin':  # macOS
+                subprocess.call(('open', str(target_path)))
+            elif current_os == 'Windows':  # Windows
+                os.startfile(str(target_path))
+            else:  # Linux
+                subprocess.call(('xdg-open', str(target_path)))
+
+            return f"Success: Opened '{target_path.name}'"
+
+        except Exception as e:
+            return f"Error: Could not open file. {str(e)}"
 
     def get_file_info(self, path: str) -> Dict[str, Union[str, int]]:
         """
-        Returns a dictionary containing metadata about the file.
+        Returns metadata about the file.
         """
         file_path = Path(path)
 
@@ -72,12 +190,8 @@ class FileManager:
             raise FileNotFoundError(f"File '{path}' not found.")
 
         stats = file_path.stat()
-
-        # Convert timestamps to readable strings
         created_time = datetime.fromtimestamp(stats.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
         modified_time = datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-
-        # Calculate size in KB
         size_kb = round(stats.st_size / 1024, 2)
 
         return {
@@ -90,28 +204,25 @@ class FileManager:
         }
 
 
-# --- Testing Section (Run this file directly to test) ---
+# --- Testing Section ---
 if __name__ == "__main__":
     tool = FileManager()
 
-    # 1. Test Create
+    # Simple manual tests
+    print("--- Testing List Directory ---")
     try:
-        print(tool.create_file("test_note.txt", "Hello OS Assistant!"))
+        # Change '.' to a real path if needed
+        print(tool.list_directory("."))
     except Exception as e:
         print(e)
 
-    # 2. Test Get Info
-    try:
-        info = tool.get_file_info("test_note.txt")
-        print(f"File Info: {info}")
-    except Exception as e:
-        print(e)
+    print("\n--- Testing Create Folder ---")
+    print(tool.create_folder("test_folder_new"))
 
-    # try:
-    #     tool.move_file(source="/Users/roeeyanoos/Downloads/timeline3.pptx", destination="/Users/roeeyanoos/Desktop/test")
-    # except Exception as e:
-    #     print(e)
+    print("\n--- Testing Rename ---")
+    # Setup for rename test
+    tool.create_file("test_folder_new/temp.txt", "content")
     try:
-        tool.copy_file(source="/Users/roeeyanoos/Desktop/test/timeline3.pptx", destination="/Users/roeeyanoos/Downloads")
+        print(tool.rename_item("test_folder_new/temp.txt", "renamed_temp.txt"))
     except Exception as e:
         print(e)
