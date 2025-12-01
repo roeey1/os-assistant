@@ -37,12 +37,13 @@ class LocalLLMClient:
         14. show_file_properties(path) - Opens "Get Info" / "Properties" window
         15. close_file_properties()
         16. get_trash_items() - Lists items in Recycle Bin/Trash
+        17. empty_trash(self) - empty trash
 
         --- SYSTEM INFO (Passive) ---
-        17. get_system_specs() - RAM, CPU, OS details
-        18. get_disk_usage() - Storage stats (default to Home if path empty)
-        19. get_user_context() - Current user, home dir, hostname
-        20. get_running_processes(limit) - Top memory consuming apps (default limit=20)
+        18. get_system_specs() - RAM, CPU, OS details
+        19. get_disk_usage() - Storage stats (default to Home if path empty)
+        20. get_user_context() - Current user, home dir, hostname
+        21. get_running_processes(limit) - Top memory consuming apps (default limit=20)
 
         RULES:
         - You MUST output ONLY valid JSON.
