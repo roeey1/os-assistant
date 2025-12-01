@@ -24,6 +24,7 @@ class SecurityManager:
         self.tool_risks = {
             # Files
             "list_directory": RiskLevel.SAFE,
+            "open_file": RiskLevel.SAFE,
             "read_file": RiskLevel.SAFE,
             "get_file_info": RiskLevel.SAFE,
             "create_file": RiskLevel.MODERATE,
@@ -32,6 +33,7 @@ class SecurityManager:
             "move_file": RiskLevel.HIGH,  # Moving to wrong place is bad
             "rename_item": RiskLevel.HIGH,  # Renaming critical files is bad
             "delete_file": RiskLevel.HIGH,  # Destructive
+
 
             # System Info (All Safe)
             "get_system_specs": RiskLevel.SAFE,
@@ -44,7 +46,7 @@ class SecurityManager:
             "open_settings": RiskLevel.MODERATE,
             "show_file_properties": RiskLevel.SAFE,
             "get_trash_items": RiskLevel.SAFE,
-            "close_app": RiskLevel.HIGH,  # Closing unsaved work is dangerous
+            "close_app": RiskLevel.MODERATE,  # Closing unsaved work is dangerous
             "close_settings": RiskLevel.SAFE,
             "close_file_properties": RiskLevel.SAFE,
             "empty_trash": RiskLevel.HIGH  # Irreversible

@@ -3,9 +3,13 @@ import sys
 # Add the current directory to Python path so 'src' imports work correctly
 sys.path.append(".")
 
-from src.llm.Client import LocalLLMClient
-from src.backend.core.assistant import OSAssistant
-from src.backend.utils.logger import AuditLogger
+# Updated imports: Main only talks to Assistant and Logger
+try:
+    from src.backend.core.assistant import OSAssistant
+    from src.backend.utils.logger import AuditLogger
+except ImportError:
+    from src.backend.core.assistant import OSAssistant
+    from src.backend.utils.logger import AuditLogger
 
 
 def main():
@@ -13,16 +17,13 @@ def main():
 
     # 1. Initialize Components
     try:
-        client = LocalLLMClient(model_name="llama3")
+        # Assistant now owns the LLM Client internally
         assistant = OSAssistant()
         logger = AuditLogger()
         print("--- System Ready. Type 'exit' to quit. ---")
     except Exception as e:
         print(f"Initialization Failed: {e}")
         return
-
-    # NEW: State variable to remember what the user needs to confirm
-    pending_intent = None
 
     # 2. Main Loop
     while True:
@@ -36,63 +37,64 @@ def main():
             if not user_input:
                 continue
 
+            print("Thinking...")
+
             # ==========================================
-            # A. CONFIRMATION FLOW (New Logic)
+            # PROCESS REQUEST
             # ==========================================
-            # If we are waiting for a "yes/no" on a dangerous action
-            if pending_intent:
-                if user_input.lower() in ["y", "yes", "confirm", "ok", "sure"]:
+            # We pass RAW TEXT. Assistant handles LLM parsing + Safety + Logic
+            response = assistant.process_request(user_input)
+
+            status = response.get('status')
+            message = response.get('message')
+            intent = response.get('intent', {})  # Retrieve intent for logging
+
+            # ==========================================
+            # HANDLE OUTCOMES
+            # ==========================================
+
+            # CASE A: Security Check triggered a Pause
+            if status == 'NEEDS_CONFIRMATION':
+                action_id = response.get('action_id')
+                risk_level = response.get('risk')
+
+                print(f"\n⚠️  SECURITY ALERT: {message}")
+                print(f"   Risk Level: {risk_level}")
+                print(f"   Action: {intent.get('action')}")
+
+                target = intent.get('resolved_path') or \
+                         intent.get('resolved_src') or \
+                         "Unknown Target"
+                print(f"   Target: {target}")
+
+                confirm = input("   Are you sure you want to proceed? (y/n): ").strip().lower()
+
+                if confirm in ['y', 'yes', 'ok', 'confirm']:
                     print("🔄 Executing confirmed action...")
 
-                    # Re-run the SAVED intent with confirm=True
-                    result = assistant.execute_intent(pending_intent, confirm=True)
+                    final_result = assistant.execute_confirmed_action(action_id)
+                    final_msg = final_result.get('message')
 
-                    # Log the successful execution
-                    logger.log_action(f"[CONFIRMED] {user_input}", pending_intent, result)
-                    print(f"Assistant: {result}")
-
+                    logger.log_action(user_input, intent, f"[CONFIRMED] {final_msg}")
+                    print(f"Assistant: {final_msg}")
                 else:
-                    # User said 'no' (or anything else)
-                    print("❌ Action cancelled.")
-                    logger.log_action(f"[CANCELLED] {user_input}", pending_intent, "User cancelled high-risk action")
+                    print("❌ Action cancelled by user.")
+                    logger.log_action(user_input, intent, "User cancelled high-risk action")
 
-                # Reset state so we go back to normal mode
-                pending_intent = None
-                continue
+            # CASE B: Action was blocked
+            elif status == 'BLOCKED':
+                print(f"⛔ BLOCKED: {message}")
+                logger.log_action(user_input, intent, f"BLOCKED: {message}")
 
-            # ==========================================
-            # B. STANDARD FLOW
-            # ==========================================
+            # CASE C: Success
+            elif status == 'SUCCESS':
+                print(f"Assistant: {message}")
+                logger.log_action(user_input, intent, message)
 
-            # 1. Parse Intent (LLM)
-            print("Thinking...")
-            intent = client.parse_intent(user_input)
-
-            # Check if LLM failed to give JSON
-            if intent.get("action") == "error":
-                print(f"Assistant: {intent.get('message')}")
-                continue
-
-            # 2. Execute Action (Assistant)
-            # This might return "Success", "Error", or "⚠️ CONFIRMATION_NEEDED"
-            result = assistant.execute_intent(intent)
-
-            # 3. Check for Confirmation Request
-            if "CONFIRMATION_NEEDED" in result:
-                # The Assistant blocked it because it's High Risk.
-                # We show the warning and SAVE the intent for the next loop.
-                print(f"Assistant: {result}")
-                print("👉 Type 'yes' to proceed, or anything else to cancel.")
-
-                pending_intent = intent
-
-                # Log the attempt
-                logger.log_action(user_input, intent, result)
-
+            # CASE D: Error
             else:
-                # Standard success, error, or security block
-                logger.log_action(user_input, intent, result)
-                print(f"Assistant: {result}")
+                print(f"Assistant: Error - {message}")
+                logger.log_action(user_input, intent, f"Error: {message}")
 
         except KeyboardInterrupt:
             print("\nGoodbye!")

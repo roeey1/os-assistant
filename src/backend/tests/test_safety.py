@@ -5,7 +5,7 @@ from pathlib import Path
 # Adjust import path so Python finds 'src'
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 
-from src.backend.core.safety import SecurityManager, RiskLevel
+from src.backend.core.guard import SecurityManager, RiskLevel
 
 
 class TestSecurityManager(unittest.TestCase):
