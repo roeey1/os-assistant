@@ -5,6 +5,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Union, List
+from send2trash import send2trash
 
 
 class FileManager:
@@ -223,6 +224,23 @@ class FileManager:
             "modified": modified_time,
             "is_directory": file_path.is_dir()
         }
+
+    def delete_file(self, path: str) -> str:
+        """
+        Moves a file or folder to the Trash/Recycle Bin.
+        Safe deletion (recoverable).
+        """
+        target_path = Path(path)
+
+        if not target_path.exists():
+            raise FileNotFoundError(f"Item '{path}' not found.")
+
+        # send2trash handles both files and folders safely
+        try:
+            send2trash(str(target_path.absolute()))
+            return f"Success: Moved '{target_path.name}' to Trash."
+        except Exception as e:
+            return f"Error deleting item: {str(e)}"
 
 
 # --- Testing Section ---

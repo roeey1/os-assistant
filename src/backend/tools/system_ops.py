@@ -175,25 +175,25 @@ class SystemOps:
         except Exception as e:
             return f"Error closing properties: {str(e)}"
 
-    # def empty_trash(self) -> str:
-    #     """
-    #     Empties the Trash/Recycle Bin.
-    #     WARNING: Irreversible.
-    #     """
-    #     try:
-    #         if self._is_mac():
-    #             # AppleScript ensures we get the native sound effect and behavior
-    #             script = 'tell application "Finder" to empty trash'
-    #             subprocess.run(["osascript", "-e", script], check=True)
-    #
-    #         elif self._is_windows():
-    #             # PowerShell: Clear-RecycleBin -Force
-    #             cmd = "powershell -command \"Clear-RecycleBin -Force\""
-    #             subprocess.run(cmd, shell=True, check=True)
-    #
-    #         return "Success: Trash emptied."
-    #     except Exception as e:
-    #         return f"Error emptying trash: {str(e)}"
+    def empty_trash(self) -> str:
+        """
+        Empties the Trash/Recycle Bin.
+        WARNING: Irreversible.
+        """
+        try:
+            if self._is_mac():
+                # AppleScript ensures we get the native sound effect and behavior
+                script = 'tell application "Finder" to empty trash'
+                subprocess.run(["osascript", "-e", script], check=True)
+
+            elif self._is_windows():
+                # PowerShell: Clear-RecycleBin -Force
+                cmd = "powershell -command \"Clear-RecycleBin -Force\""
+                subprocess.run(cmd, shell=True, check=True)
+
+            return "Success: Trash emptied."
+        except Exception as e:
+            return f"Error emptying trash: {str(e)}"
 
 
 

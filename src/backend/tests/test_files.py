@@ -146,7 +146,31 @@ class TestFileManager(unittest.TestCase):
         self.assertEqual(dest.read_text(), "copy me")
 
     # ==========================================
-    # 4. TEST OPEN (Mocked)
+    # 4. TEST DELETION (Mocked)
+    # ==========================================
+
+    @patch('src.backend.tools.files.send2trash')
+    def test_delete_file(self, mock_send2trash):
+        """
+        Test deleting a file using the Safe Delete (Trash) mechanism.
+        We verify that 'send2trash' is called instead of os.remove.
+        """
+        # 1. Setup: Create a file to delete
+        target = self.test_dir / "delete_me.txt"
+        target.touch()
+
+        # 2. Action: Call the tool
+        msg = self.fm.delete_file(str(target))
+
+        # 3. Assertions
+        self.assertIn("Success", msg)
+        self.assertIn("Trash", msg)
+
+        # Verify the code TRIED to call send2trash with the absolute path
+        mock_send2trash.assert_called_once_with(str(target.absolute()))
+
+    # ==========================================
+    # 5. TEST OPEN (Mocked)
     # ==========================================
 
     @patch('subprocess.call')  # Mock Linux/Mac calls

@@ -1,6 +1,6 @@
 import json
 import ollama
-from src.core.assistant import OSAssistant
+from src.backend.core.assistant import OSAssistant
 class LocalLLMClient:
     def __init__(self, model_name: str = "llama3"):
         self.model_name = model_name

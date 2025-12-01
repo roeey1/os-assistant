@@ -78,13 +78,13 @@ class TestSystemOps(unittest.TestCase):
         self.assertIn("deleted_doc.txt", result)
         self.assertIn("old_pic.jpg", result)
 
-    # @patch('subprocess.run')
-    # def test_empty_trash(self, mock_run):
-    #     """Test emptying trash command."""
-    #     result = self.ops.empty_trash()
-    #
-    #     self.assertIn("Success", result)
-    #     self.assertTrue(mock_run.called)
+    @patch('subprocess.run')
+    def test_empty_trash(self, mock_run):
+        """Test emptying trash command."""
+        result = self.ops.empty_trash()
+
+        self.assertIn("Success", result)
+        self.assertTrue(mock_run.called)
 
     @patch('subprocess.run')
     def test_close_app(self, mock_run):
