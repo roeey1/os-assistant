@@ -5,10 +5,10 @@ from typing import Dict, Tuple
 
 
 class RiskLevel(Enum):
-    SAFE = "SAFE"  # Read-only (List, Get Info)
-    MODERATE = "MODERATE"  # Non-destructive write (Create, Copy)
-    HIGH = "HIGH"  # Destructive (Delete, Move, Rename, Empty Trash)
-    BLOCKED = "BLOCKED"  # System paths / unauthorized areas
+    SAFE = "SAFE"  # Read-only
+    MODERATE = "MODERATE"  # Creation/Open App
+    HIGH = "HIGH"  # Destructive
+    BLOCKED = "BLOCKED"  # Forbidden
 
 
 class SecurityManager:
@@ -20,7 +20,7 @@ class SecurityManager:
     def __init__(self):
         self.user_home = Path.home().resolve()
 
-        # 1. Define Risk Levels for every tool we built
+        # 1. Define Risk Levels
         self.tool_risks = {
             # Files
             "list_directory": RiskLevel.SAFE,
@@ -34,8 +34,7 @@ class SecurityManager:
             "rename_item": RiskLevel.HIGH,  # Renaming critical files is bad
             "delete_file": RiskLevel.HIGH,  # Destructive
 
-
-            # System Info (All Safe)
+            # System Info
             "get_system_specs": RiskLevel.SAFE,
             "get_disk_usage": RiskLevel.SAFE,
             "get_running_processes": RiskLevel.SAFE,
@@ -55,20 +54,18 @@ class SecurityManager:
         # 2. Define Restricted Paths (Blacklist)
         # These are paths the AI should NEVER touch.
         self.restricted_paths = [
-            Path("/System"),  # macOS System
-            Path("/usr"),  # Unix binaries
+            Path("/System"),
+            Path("/usr"),
             Path("/bin"),
             Path("/etc"),
             Path("/var"),
-            Path("C:\\Windows"),  # Windows System
+            Path("C:\\Windows"),
             Path("C:\\Program Files"),
             Path("C:\\Program Files (x86)"),
         ]
 
     def validate_action(self, tool_name: str, args: Dict) -> Tuple[bool, str, RiskLevel]:
         """
-        Main entry point. Checks if the action is allowed and returns its risk level.
-        Returns: (is_allowed, reason, risk_level)
         """
         # 1. Unknown Tool Check
         if tool_name not in self.tool_risks:
@@ -77,7 +74,6 @@ class SecurityManager:
         risk = self.tool_risks[tool_name]
 
         # 2. Path Safety Check
-        # We extract any argument that looks like a path
         paths_to_check = []
         if 'path' in args: paths_to_check.append(args['path'])
         if 'source' in args: paths_to_check.append(args['source'])
@@ -85,11 +81,20 @@ class SecurityManager:
         if 'old_path' in args: paths_to_check.append(args['old_path'])
 
         for p in paths_to_check:
+            # Skip validation if path wasn't found (Integrity check will catch this later if crucial)
+            if p == "NOT FOUND": continue
+
             is_safe, reason = self._is_path_safe(p)
             if not is_safe:
                 return False, reason, RiskLevel.BLOCKED
 
-        # 3. Approved
+        # 3. State Integrity Check (NEW)
+        # Verifies the file still exists (or doesn't exist) right before execution
+        is_valid_state, state_reason = self._validate_state_integrity(tool_name, args)
+        if not is_valid_state:
+            return False, f"State Error: {state_reason}", RiskLevel.BLOCKED
+
+        # 4. Approved
         return True, "Action permitted.", risk
 
     def _is_path_safe(self, path_str: str) -> Tuple[bool, str]:
@@ -97,21 +102,15 @@ class SecurityManager:
         Internal logic to check if a path is within allowed bounds.
         """
         try:
-            # Resolve resolves symlinks and '..' (preventing traversal attacks)
-            # expanduser handles '~'
             target = Path(path_str).expanduser().resolve()
 
             # Rule 1: Root protection
-            # Prevent operations directly on "/" or "C:\"
-            if target.parent == target:  # This checks if it's a root
+            if target.parent == target:
                 return False, f"Access denied: Cannot operate on system root '{target}'."
 
             # Rule 2: Check Blacklist
             for blocked in self.restricted_paths:
-                # We check if the target IS the blocked path or IS INSIDE it
-                # e.g. /System/Library is inside /System
                 try:
-                    # check if 'blocked' is a parent of 'target' or equal
                     if target == blocked or blocked in target.parents:
                         return False, f"Access denied: '{target}' is a restricted system path."
                 except Exception:
@@ -120,5 +119,40 @@ class SecurityManager:
             return True, "Safe"
 
         except Exception as e:
-            # If we can't parse the path, block it to be safe
             return False, f"Invalid path format: {str(e)}"
+
+    def _validate_state_integrity(self, tool: str, args: Dict) -> Tuple[bool, str]:
+        """
+        Ensures the environment state matches the tool's requirements.
+        Handles race conditions where a file might disappear between confirmation and execution.
+        """
+        try:
+            # 1. Requirements for Deletion/Move/Read (Source MUST exist)
+            if tool in ['delete_file', 'move_file', 'copy_file', 'read_file', 'get_file_info', 'rename_item',
+                        'open_file']:
+                # Determine which arg holds the source path
+                path_key = 'source' if tool in ['move_file', 'copy_file'] else 'path'
+                if tool == 'rename_item': path_key = 'old_path'
+
+                path_val = args.get(path_key)
+                if path_val == "NOT FOUND":
+                    return False, f"The item '{path_key}' could not be located."
+
+                target = Path(path_val).resolve()
+                if not target.exists():
+                    return False, f"The item '{target.name}' no longer exists (it may have been deleted externally)."
+
+            # 2. Requirements for Creation (Target SHOULD NOT exist)
+            # This prevents overwriting if a file appeared during the wait time
+            if tool in ['create_file', 'create_folder']:
+                path_val = args.get('path')
+                if path_val != "NOT FOUND":
+                    target = Path(path_val).resolve()
+                    if target.exists():
+                        return False, f"A item named '{target.name}' was created while waiting. Operation aborted to prevent overwrite."
+
+            return True, "State Valid"
+
+        except Exception as e:
+            # If path resolution fails during this check, assume unsafe
+            return False, f"Path resolution error during integrity check: {str(e)}"
