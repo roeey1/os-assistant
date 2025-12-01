@@ -221,7 +221,7 @@ from src.backend.tools.system_ops import SystemOps
 from src.backend.tools.sys_info import SystemInfo
 
 # Security
-from src.backend.core.safety import SecurityManager, RiskLevel
+from src.backend.core.guard import SecurityManager, RiskLevel
 
 
 class OSAssistant:
