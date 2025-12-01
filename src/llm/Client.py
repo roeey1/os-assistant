@@ -19,31 +19,32 @@ class LocalLLMClient:
         You have access to these tools:
 
         --- FILE OPERATIONS ---
-        1. create_file(path, content)
-        2. create_folder(path)
-        3. move_file(source, destination)
-        4. copy_file(source, destination)
-        5. rename_item(path, new_name) - new_name is filename only (e.g. "new.txt")
-        6. list_directory(path)
-        7. read_file(path) - Returns text content
-        8. open_file(path) - Opens in default OS app (Preview, Word, etc)
-        9. get_file_info(path) - Size, created date, etc.
+        - create_file(path, content)
+        - create_folder(path)
+        - move_file(source, destination)
+        - copy_file(source, destination)
+        - rename_item(path, new_name) - new_name is filename only (e.g. "new.txt")
+        - list_directory(path)
+        - read_file(path) - Returns text content
+        - open_file(path) - Opens in default OS app (Preview, Word, etc)
+        - get_file_info(path) - Size, created date, etc.
+        - delete_file(path) - Deletes file
 
         --- SYSTEM OPERATIONS (Active) ---
-        10. open_app(app_name) - e.g. "Calculator", "Spotify"
-        11. close_app(app_name)
-        12. open_settings()
-        13. close_settings()
-        14. show_file_properties(path) - Opens "Get Info" / "Properties" window
-        15. close_file_properties()
-        16. get_trash_items() - Lists items in Recycle Bin/Trash
-        17. empty_trash(self) - empty trash
+        - open_app(app_name) - e.g. "Calculator", "Spotify"
+        - close_app(app_name)
+        - open_settings()
+        - close_settings()
+        - show_file_properties(path) - Opens "Get Info" / "Properties" window
+        - close_file_properties()
+        - get_trash_items() - Lists items in Recycle Bin/Trash
+        - empty_trash(self) - empty trash
 
         --- SYSTEM INFO (Passive) ---
-        18. get_system_specs() - RAM, CPU, OS details
-        19. get_disk_usage() - Storage stats (default to Home if path empty)
-        20. get_user_context() - Current user, home dir, hostname
-        21. get_running_processes(limit) - Top memory consuming apps (default limit=20)
+        - get_system_specs() - RAM, CPU, OS details
+        - get_disk_usage() - Storage stats (default to Home if path empty)
+        - get_user_context() - Current user, home dir, hostname
+        - get_running_processes(limit) - Top memory consuming apps (default limit=20)
 
         RULES:
         - You MUST output ONLY valid JSON.
