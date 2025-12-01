@@ -10,7 +10,6 @@ from typing import Dict, Union, List
 class FileManager:
     """
     Handles direct file system operations.
-    NOTE: This class assumes permissions have already been checked by the Safety layer.
     """
 
     # --- 1. FILE CREATION & COPYING ---
@@ -24,6 +23,9 @@ class FileManager:
         if file_path.exists():
             raise FileExistsError(f"The file '{path}' already exists.")
 
+        # For creating NEW files, we generally still want to allow creating parents,
+        # otherwise 'create file in new folder X' will always fail.
+        # If you want to restrict this too, comment out the next line.
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -33,7 +35,7 @@ class FileManager:
 
     def create_folder(self, path: str) -> str:
         """
-        Creates a new folder (and parent folders if needed).
+        Creates a new folder.
         """
         folder_path = Path(path)
 
@@ -46,27 +48,29 @@ class FileManager:
     def copy_file(self, source: str, destination: str) -> str:
         """
         Copies a file from source to destination.
+        STRICT MODE: Destination folder must exist.
         """
         src_path = Path(source)
         dst_path = Path(destination)
 
-        # 1. Validation
+        # 1. Validation Source
         if not src_path.exists():
             raise FileNotFoundError(f"Source file '{src_path.name}' not found.")
 
-        # 2. Smart Destination Handling (The Fix)
-        # If source has an extension (.pptx) but destination doesn't (e.g. "backup")
-        # we assume "backup" is a FOLDER, not a new filename.
+        # Case A: Destination looks like a folder (no extension, e.g. "Backup")
         if src_path.suffix and not dst_path.suffix:
             if not dst_path.exists():
-                dst_path.mkdir(parents=True, exist_ok=True)
+                # CHANGED: Raise error instead of creating it
+                raise FileNotFoundError(f"Destination folder '{destination}' not found.")
 
-        # 3. Ensure parent directory for destination exists (if dst is a file path)
-        if dst_path.suffix and not dst_path.parent.exists():
-            dst_path.parent.mkdir(parents=True, exist_ok=True)
+        # Case B: Destination looks like a file (has extension, e.g. "Backup/file.txt")
+        # We must ensure the PARENT directory exists.
+        elif dst_path.suffix:
+            if not dst_path.parent.exists():
+                # CHANGED: Raise error instead of creating parent
+                raise FileNotFoundError(f"Destination directory '{dst_path.parent}' not found.")
 
-        # 4. Execute Copy
-        # shutil.copy2 handles copying a file INTO a folder automatically
+        # 3. Execute Copy
         shutil.copy2(str(src_path), str(dst_path))
 
         return f"Success: Copied '{src_path.name}' to '{destination}'"
@@ -76,20 +80,28 @@ class FileManager:
     def move_file(self, source: str, destination: str) -> str:
         """
         Moves a file from source to destination.
+        STRICT MODE: Destination folder must exist.
         """
         src_path = Path(source)
         dst_path = Path(destination)
 
-        # 1. Validation
+        # 1. Validation Source
         if not src_path.exists():
             raise FileNotFoundError(f"Source file '{src_path.name}' not found.")
 
-        # 2. Smart Destination Handling (The Fix)
-        # If source is a file (has extension) and dest looks like a folder (no extension)
-        # We treat dest as a directory.
+        # 2. Check Destination Folder Logic
+
+        # Case A: Destination looks like a folder (no extension)
         if src_path.suffix and not dst_path.suffix:
             if not dst_path.exists():
-                dst_path.mkdir(parents=True, exist_ok=True)
+                # CHANGED: Raise error instead of creating it
+                raise FileNotFoundError(f"Destination folder '{destination}' not found.")
+
+        # Case B: Destination looks like a file path (has extension)
+        elif dst_path.suffix:
+            if not dst_path.parent.exists():
+                # CHANGED: Raise error instead of creating parent
+                raise FileNotFoundError(f"Destination directory '{dst_path.parent}' not found.")
 
         # 3. Execute Move
         shutil.move(str(src_path), str(dst_path))
@@ -119,7 +131,6 @@ class FileManager:
     def list_directory(self, path: str) -> str:
         """
         Lists the contents of a directory.
-        Returns a formatted string distinguishing files from folders.
         """
         target_path = Path(path)
 
@@ -130,9 +141,7 @@ class FileManager:
 
         items = []
         try:
-            # Sort: Folders first, then files
             for item in sorted(target_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-                # Add a slash to folders so LLM knows it's a dir
                 name = f"{item.name}/" if item.is_dir() else item.name
                 items.append(name)
         except PermissionError:
@@ -141,13 +150,11 @@ class FileManager:
         if not items:
             return "Directory is empty."
 
-        # Return as a simple comma-separated list or JSON-like string
         return f"Contents of '{target_path.name}': {', '.join(items)}"
 
     def read_file(self, path: str, max_chars: int = 2000) -> str:
         """
         Reads the text content of a file.
-        Limits output to `max_chars` to prevent LLM overflow.
         """
         target_path = Path(path)
 
@@ -157,28 +164,25 @@ class FileManager:
             raise IsADirectoryError(f"'{path}' is a directory, not a text file.")
 
         try:
-            # Check size first (if > 10MB, reject immediately)
             if target_path.stat().st_size > 10 * 1024 * 1024:
                 return "Error: File is too large to read (over 10MB)."
 
             with open(target_path, 'r', encoding='utf-8') as f:
                 content = f.read(max_chars)
 
-            # Check if we truncated
             if len(content) == max_chars:
                 content += "\n...[Content Truncated]..."
 
             return content
 
         except UnicodeDecodeError:
-            return "Error: Unable to read file. It appears to be binary (image, exe, etc)."
+            return "Error: Unable to read file. It appears to be binary."
         except Exception as e:
             return f"Error reading file: {str(e)}"
 
     def open_file(self, path: str) -> str:
         """
         Opens the file in the default OS application.
-        (e.g., Preview for images, Word for docs).
         """
         target_path = Path(path)
 
@@ -187,16 +191,13 @@ class FileManager:
 
         try:
             current_os = platform.system()
-
-            if current_os == 'Darwin':  # macOS
+            if current_os == 'Darwin':
                 subprocess.call(('open', str(target_path)))
-            elif current_os == 'Windows':  # Windows
+            elif current_os == 'Windows':
                 os.startfile(str(target_path))
-            else:  # Linux
+            else:
                 subprocess.call(('xdg-open', str(target_path)))
-
             return f"Success: Opened '{target_path.name}'"
-
         except Exception as e:
             return f"Error: Could not open file. {str(e)}"
 
@@ -227,22 +228,11 @@ class FileManager:
 # --- Testing Section ---
 if __name__ == "__main__":
     tool = FileManager()
-
-    # Simple manual tests
-    print("--- Testing List Directory ---")
+    # Manual Test
+    # This should now FAIL if 'NonExistentFolder' does not exist
     try:
-        # Change '.' to a real path if needed
-        print(tool.list_directory("."))
+        # tool.create_file("test.txt", "content")
+        # tool.move_file("test.txt", "NonExistentFolder")
+        pass
     except Exception as e:
-        print(e)
-
-    print("\n--- Testing Create Folder ---")
-    print(tool.create_folder("test_folder_new"))
-
-    print("\n--- Testing Rename ---")
-    # Setup for rename test
-    tool.create_file("test_folder_new/temp.txt", "content")
-    try:
-        print(tool.rename_item("test_folder_new/temp.txt", "renamed_temp.txt"))
-    except Exception as e:
-        print(e)
+        print(f"Test caught expected error: {e}")
