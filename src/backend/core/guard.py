@@ -48,7 +48,10 @@ class SecurityManager:
             "close_app": RiskLevel.MODERATE,  # Closing unsaved work is dangerous
             "close_settings": RiskLevel.SAFE,
             "close_file_properties": RiskLevel.SAFE,
-            "empty_trash": RiskLevel.HIGH  # Irreversible
+            "empty_trash": RiskLevel.HIGH,  # Irreversible
+
+            #general
+            "chat": RiskLevel.SAFE,
         }
 
         # 2. Define Restricted Paths (Blacklist)
