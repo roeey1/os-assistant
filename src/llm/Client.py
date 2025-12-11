@@ -1,4 +1,5 @@
 import json
+import re
 import ollama
 
 
@@ -82,7 +83,11 @@ class LocalLLMClient:
         - chat - Use this to reply to the user, answer questions, or summarize history.
 
         RULES:
-        1. You MUST output ONLY valid JSON. Do not add markdown (```json).
+        - NEVER output a path with a wildcard({'action': 'copy_file', 'source': 'yan/', 'destination': 'test'} *.pdf for example cannot be in "source" or "destination")
+        1. CRITICAL: You MUST output ONLY the raw JSON string.
+           - NO conversational text (e.g., "Here is the command", "Sure", "I did this").
+           - NO markdown formatting (e.g., do NOT use ```json or ```).
+           - The response must start with { and end with }.
         2. If the user request is unclear or unsafe, return {"action": "error", "message": "reason"}.
         3. HISTORY: If the user asks about previous actions (e.g., "what did I just do?", "what was my last action"), look at the history provided and use the 'chat' tool to answer.
 
@@ -143,6 +148,7 @@ class LocalLLMClient:
         else:
             final_system_prompt = base_system_prompt
 
+        raw_content = ""
         try:
             # 3. Call the Local Model
             response = ollama.chat(model=self.model_name, messages=[
@@ -151,25 +157,67 @@ class LocalLLMClient:
             ])
 
             raw_content = response['message']['content']
-            cleaned_content = self._clean_json_string(raw_content)
-            parsed_intent = json.loads(cleaned_content)
+
+            # Use the robust cleaning method (now returns the JSON string or raises error)
+            cleaned_json_string = self._extract_json_string(raw_content)
+            parsed_intent = json.loads(cleaned_json_string)
 
             # Debug Print
             print(f"\n[DEBUG] LLM Raw JSON Response: {parsed_intent}\n")
 
             return parsed_intent
 
-        except json.JSONDecodeError:
-            return {"action": "error", "message": "Failed to parse llm response as JSON", "raw": raw_content}
+        except (ValueError, json.JSONDecodeError) as e:
+            return {
+                "action": "error",
+                "message": f"Failed to parse llm response: {str(e)}",
+                "raw": raw_content
+            }
         except Exception as e:
             return {"action": "error", "message": str(e)}
 
-    def _clean_json_string(self, text: str) -> str:
-        text = text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        return text.strip()
+
+
+    def _extract_json_string(self, text: str) -> str:
+        """
+        Robustly extracts the JSON block from the LLM response.
+        Handles Markdown fences and conversational prefixes.
+        """
+        if not text:
+            raise ValueError("Empty response from LLM")
+
+        # 1. Try to find a JSON block inside Markdown fences (```json ... ``` or just ``` ... ```)
+        # The pattern looks for ``` followed optionally by 'json' (case insensitive),
+        # then captures content inside the fences.
+        pattern = r"```(?:json)?\s*(.*?)```"
+        fenced_json = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+
+        if fenced_json:
+            candidate = fenced_json.group(1).strip()
+            try:
+                # Validation: Check if it actually parses
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass  # Fall through to try other methods if the fenced content was invalid
+
+        # 2. Look for ANY JSON object in the entire text
+        # This regex looks for the first occurrence of { followed by anything, ending with the last }
+        brace_json = re.search(r"(\{[\s\S]*\})", text, re.DOTALL)
+        if brace_json:
+            candidate = brace_json.group(1).strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Last resort fallback: Simple strip
+        # (if the whole text is just JSON with no braces detected or parsing failed previously)
+        try:
+            json.loads(text.strip())
+            return text.strip()
+        except json.JSONDecodeError:
+            pass
+
+        raise ValueError("No valid JSON object found in LLM response")
