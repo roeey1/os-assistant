@@ -1,14 +1,14 @@
-import os
 import subprocess
 import platform
-import shutil
+import os
+import webbrowser
 from pathlib import Path
 
 
 class SystemOps:
     """
     Active system operations.
-    These tools INTERACT with the OS (launching apps, opening windows, managing trash).
+    Interacts with the OS to manage Apps, Windows, and Power States.
     """
 
     def _is_mac(self):
@@ -17,196 +17,260 @@ class SystemOps:
     def _is_windows(self):
         return platform.system() == "Windows"
 
+    # ==========================================
+    # 1. GENERIC APP MANAGEMENT
+    # ==========================================
+
     def open_app(self, app_name: str) -> str:
-        """
-        Opens an application by name.
-        Example: "Calculator", "Spotify", "Google Chrome"
-        """
+        """Opens any application by name."""
         try:
             if self._is_mac():
-                # macOS: 'open -a "App Name"'
                 subprocess.run(["open", "-a", app_name], check=True)
             elif self._is_windows():
-                # Windows: 'start app_name' (shell=True is needed for start)
                 subprocess.run(f"start {app_name}", shell=True, check=True)
-            else:
-                return "Error: Unsupported OS for launching apps."
-
             return f"Success: Launched '{app_name}'"
         except Exception as e:
-            return f"Error: Could not launch '{app_name}'. {str(e)}"
-
-    def open_settings(self) -> str:
-        """
-        Opens the main System Settings/Preferences window.
-        """
-        try:
-            if self._is_mac():
-                subprocess.run(["open", "-b", "com.apple.systempreferences"], check=True)
-            elif self._is_windows():
-                subprocess.run("start ms-settings:", shell=True, check=True)
-            return "Success: Opened System Settings."
-        except Exception as e:
-            return f"Error opening settings: {str(e)}"
-
-    def show_file_properties(self, path: str) -> str:
-        """
-        Opens the native 'Get Info' (macOS) or 'Properties' (Windows) window for a file.
-        """
-        target = Path(path).resolve()
-        if not target.exists():
-            return f"Error: File '{path}' not found."
-
-        try:
-            if self._is_mac():
-                # FIXED: We construct the script to force 'alias' resolution.
-                # This fixes the (-1728) error by ensuring Finder resolves the file ID first.
-                script = (
-                    f'set targetFile to (POSIX file "{str(target)}") as alias\n'
-                    'tell application "Finder"\n'
-                    '    activate\n'
-                    '    open information window of targetFile\n'
-                    'end tell'
-                )
-
-                # Pass the multi-line script properly to osascript
-                subprocess.run(["osascript", "-e", script], check=True)
-
-            elif self._is_windows():
-                # Windows: Select file in Explorer (Properties dialog is hard to automate via cmd)
-                subprocess.run(f'explorer /select,"{str(target)}"', shell=True)
-                return f"Success: Opened folder with '{target.name}' selected."
-
-            return f"Success: Opened properties for '{target.name}'"
-        except Exception as e:
-            return f"Error showing properties: {str(e)}"
-
-    def get_trash_items(self) -> str:
-        """
-        Lists items currently in the Trash/Recycle Bin.
-        """
-        items = []
-        try:
-            if self._is_mac():
-                # macOS: List contents of ~/.Trash
-                trash_path = Path.home() / ".Trash"
-                if trash_path.exists():
-                    items = [f.name for f in trash_path.iterdir() if f.name != ".DS_Store"]
-
-            elif self._is_windows():
-                # Windows: Use PowerShell to list Recycle Bin
-                cmd = "powershell -command \"(New-Object -ComObject Shell.Application).NameSpace(0xa).Items() | Select-Object -ExpandProperty Name\""
-                result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
-                items = result.stdout.strip().split('\n')
-                # Filter empty strings
-                items = [i.strip() for i in items if i.strip()]
-
-            if not items:
-                return "Trash is empty."
-
-            return f"Trash contains {len(items)} items: {', '.join(items[:10])}" + ("..." if len(items) > 10 else "")
-
-        except PermissionError:
-            return "Error: Permission denied. The Assistant needs Full Disk Access to view Trash."
-        except Exception as e:
-            return f"Error listing trash: {str(e)}"
-
-        # --- CLOSING ACTIONS ---
+            return f"Error opening '{app_name}': {str(e)}"
 
     def close_app(self, app_name: str) -> str:
-        """
-        Closes an application.
-        """
+        """Closes an application."""
         try:
             if self._is_mac():
-                # AppleScript 'quit' allows the app to save data/exit gracefully
                 script = f'quit app "{app_name}"'
                 subprocess.run(["osascript", "-e", script], check=True)
-
             elif self._is_windows():
-                # Windows: taskkill. We try to be smart about the .exe extension.
-                # If user says "Notepad", we try "Notepad.exe"
                 proc_name = app_name if app_name.endswith(".exe") else f"{app_name}.exe"
                 subprocess.run(f"taskkill /IM \"{proc_name}\" /F", shell=True, check=True)
-
             return f"Success: Closed '{app_name}'"
-        except subprocess.CalledProcessError:
-            return f"Error: Could not close '{app_name}'. Is it running?"
         except Exception as e:
-            return f"Error closing app: {str(e)}"
+            return f"Error closing '{app_name}': {str(e)}"
+
+    # ==========================================
+    # 2. SPECIFIC TOOLS (Terminal, Browser, Finder)
+    # ==========================================
+
+    def open_terminal(self) -> str:
+        """Opens the default Command Line Interface."""
+        try:
+            if self._is_mac():
+                subprocess.run(["open", "-a", "Terminal"], check=True)
+            elif self._is_windows():
+                subprocess.run("start cmd", shell=True, check=True)
+            return "Success: Opened Terminal."
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def close_terminal(self) -> str:
+        """Closes the Terminal application."""
+        if self._is_mac():
+            return self.close_app("Terminal")
+        elif self._is_windows():
+            # Closing cmd.exe or powershell.exe
+            try:
+                subprocess.run("taskkill /IM cmd.exe /F", shell=True)
+                subprocess.run("taskkill /IM powershell.exe /F", shell=True)
+                return "Success: Closed Terminal windows."
+            except Exception as e:
+                return f"Error: {str(e)}"
+
+    def open_browser(self, url: str = "https://google.com") -> str:
+        """Opens the default web browser."""
+        try:
+            webbrowser.open(url)
+            return f"Success: Opened browser to {url}"
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def close_browser(self) -> str:
+        """Attempts to close common browsers."""
+        browsers = ["Google Chrome", "Safari", "Firefox", "Microsoft Edge"]
+        results = []
+        if self._is_mac():
+            for b in browsers:
+                try:
+                    self.close_app(b)
+                    results.append(b)
+                except:
+                    pass
+        elif self._is_windows():
+            exes = ["chrome.exe", "firefox.exe", "msedge.exe"]
+            for exe in exes:
+                try:
+                    subprocess.run(f"taskkill /IM {exe} /F", shell=True, stderr=subprocess.DEVNULL)
+                    results.append(exe)
+                except:
+                    pass
+
+        return f"Success: Attempted to close browsers ({', '.join(results)})"
+
+
+    def open_task_manager(self) -> str:
+        """Opens Activity Monitor or Task Manager."""
+        try:
+            if self._is_mac():
+                subprocess.run(["open", "-a", "Activity Monitor"], check=True)
+            elif self._is_windows():
+                subprocess.run("start taskmgr", shell=True, check=True)
+            return "Success: Opened Task Manager."
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    # ==========================================
+    # 3. WINDOW & SYSTEM STATE
+    # ==========================================
+
+    def minimize_all_windows(self) -> str:
+        """Hides all windows to show Desktop."""
+        try:
+            if self._is_mac():
+                # Command+Option+H+M is hard to script reliably, using Finder approach
+                script = '''
+                tell application "Finder"
+                    set visible of every process to false
+                    set visible of process "Finder" to true
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", script], check=True)
+            elif self._is_windows():
+                # PowerShell generic method
+                cmd = "powershell -command \"(New-Object -ComObject Shell.Application).MinimizeAll()\""
+                subprocess.run(cmd, shell=True, check=True)
+            return "Success: All windows minimized."
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def lock_screen(self) -> str:
+        """Locks the computer."""
+        try:
+            if self._is_mac():
+                script = 'tell application "System Events" to keystroke "q" using {control down, command down}'
+                subprocess.run(["osascript", "-e", script], check=True)
+            elif self._is_windows():
+                subprocess.run("rundll32.exe user32.dll,LockWorkStation", shell=True, check=True)
+            return "Success: Screen locked."
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    # ==========================================
+    # 4. SETTINGS & PROPERTIES (UPDATED)
+    # ==========================================
+
+    def open_settings(self, page: str = None) -> str:
+        """
+        Opens System Settings, optionally to a specific page.
+        """
+        # Map common terms to OS-specific URIs
+        # Windows: ms-settings:<URI>
+        # macOS: x-apple.systempreferences:com.apple.preference.<ID>
+
+        page = page.lower() if page else ""
+
+        windows_map = {
+            "battery": "batterysaver",
+            "display": "display",
+            "sound": "sound",
+            "wifi": "network-wifi",
+            "bluetooth": "bluetooth",
+            "update": "windowsupdate",
+            "apps": "appsfeatures",
+            "storage": "storagesense",
+            "network": "network",
+            "privacy": "privacy",
+            "notifications": "notifications"
+        }
+
+        mac_map = {
+            "battery": "com.apple.preference.battery",  # Might vary on Ventura+
+            "display": "com.apple.preference.displays",
+            "sound": "com.apple.preference.sound",
+            "wifi": "com.apple.preference.network",
+            "network": "com.apple.preference.network",
+            "bluetooth": "com.apple.preferences.Bluetooth",
+            "update": "com.apple.preferences.softwareupdate",
+            "users": "com.apple.preferences.users",
+            "security": "com.apple.preference.security",
+            "privacy": "com.apple.preference.security"
+        }
+
+        try:
+            if self._is_mac():
+                uri = "x-apple.systempreferences:"
+                if page and page in mac_map:
+                    uri += mac_map[page]
+                # Fallback: Just open the main app settings pane if specific mapping fails/not found
+                elif page:
+                    # Try heuristic: most prefs start with com.apple.preference.[name]
+                    uri += f"com.apple.preference.{page}"
+                else:
+                    # Open main window
+                    subprocess.run(["open", "-b", "com.apple.systempreferences"], check=True)
+                    return "Success: Opened System Settings."
+
+                subprocess.run(["open", uri], check=True)
+
+            elif self._is_windows():
+                uri = "ms-settings:"
+                if page and page in windows_map:
+                    uri += windows_map[page]
+                elif page:
+                    uri += page  # Try passing raw match
+
+                subprocess.run(f"start {uri}", shell=True, check=True)
+
+            return f"Success: Opened Settings ({page or 'Main'})."
+        except Exception as e:
+            return f"Error opening settings for '{page}': {str(e)}"
 
     def close_settings(self) -> str:
-        """
-        Closes the System Settings (or System Preferences) window.
-        """
+        if self._is_mac():
+            return self.close_app("System Settings")
+        elif self._is_windows():
+            return self.close_app("SystemSettings")
+        return "Info: Not supported."
+
+    def show_file_properties(self, path: str) -> str:
+        target = Path(path).resolve()
+        if not target.exists(): return "Error: File not found."
         try:
             if self._is_mac():
-                # Try closing the modern "System Settings" first
-                try:
-                    subprocess.run(["osascript", "-e", 'quit app "System Settings"'], check=True,
-                                   stderr=subprocess.DEVNULL)
-                except:
-                    # Fallback for older macOS "System Preferences"
-                    subprocess.run(["osascript", "-e", 'quit app "System Preferences"'], check=True)
-
+                script = f'set t to (POSIX file "{str(target)}") as alias\ntell application "Finder"\nactivate\nopen information window of t\nend tell'
+                subprocess.run(["osascript", "-e", script], check=True)
             elif self._is_windows():
-                # The modern Settings app process name
-                subprocess.run("taskkill /IM SystemSettings.exe /F", shell=True, check=True)
-
-            return "Success: Closed System Settings."
+                subprocess.run(f'explorer /select,"{str(target)}"', shell=True)
+            return f"Success: Info opened for '{target.name}'"
         except Exception as e:
-            return f"Error closing settings: {str(e)}"
+            return str(e)
 
     def close_file_properties(self) -> str:
-        """
-        Closes 'Get Info' windows.
-        """
+        if self._is_mac():
+            try:
+                subprocess.run(["osascript", "-e", 'tell application "Finder" to close every information window'],
+                               check=True)
+                return "Success: Closed Info windows."
+            except Exception as e:
+                return str(e)
+        return "Info: Not supported on Windows."
+
+    def get_trash_items(self) -> str:
         try:
             if self._is_mac():
-                # FIXED: Target the specific 'information window' class directly.
-                # This fixes the (-10010) error because Finder knows exactly how to close these.
-                script = 'tell application "Finder" to close every information window'
-                subprocess.run(["osascript", "-e", script], check=True)
-                return "Success: Closed Info windows."
-
+                t = Path.home() / ".Trash"
+                items = [f.name for f in t.iterdir() if f.name != ".DS_Store"] if t.exists() else []
             elif self._is_windows():
-                return "Info: Closing Properties windows is not currently supported on Windows."
+                cmd = "powershell -command \"(New-Object -ComObject Shell.Application).NameSpace(0xa).Items() | Select-Object -ExpandProperty Name\""
+                res = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+                items = [i.strip() for i in res.stdout.split('\n') if i.strip()]
 
+            return f"Trash contains {len(items)} items." if items else "Trash is empty."
         except Exception as e:
-            return f"Error closing properties: {str(e)}"
+            return f"Error: {str(e)}"
 
     def empty_trash(self) -> str:
-        """
-        Empties the Trash/Recycle Bin.
-        WARNING: Irreversible.
-        """
         try:
             if self._is_mac():
-                # AppleScript ensures we get the native sound effect and behavior
-                script = 'tell application "Finder" to empty trash'
-                subprocess.run(["osascript", "-e", script], check=True)
-
+                subprocess.run(["osascript", "-e", 'tell application "Finder" to empty trash'], check=True)
             elif self._is_windows():
-                # PowerShell: Clear-RecycleBin -Force
-                cmd = "powershell -command \"Clear-RecycleBin -Force\""
-                subprocess.run(cmd, shell=True, check=True)
-
+                subprocess.run("powershell -command \"Clear-RecycleBin -Force\"", shell=True, check=True)
             return "Success: Trash emptied."
         except Exception as e:
-            return f"Error emptying trash: {str(e)}"
-
-
-
-# --- Manual Test ---
-if __name__ == "__main__":
-    ops = SystemOps()
-    # Be careful running this! It will actually open apps.
-    print(ops.open_app("Calculator"))
-    print(ops.get_trash_items())
-    print(ops.open_settings())
-    print(ops.show_file_properties("/Users/raananpevzner/Desktop/ID.jpg"))
-    print(ops.close_app("Calculator"))
-    print(ops.close_file_properties())
-    print(ops.close_settings())
-
-
+            return f"Error: {str(e)}"
