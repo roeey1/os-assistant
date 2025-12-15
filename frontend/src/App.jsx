@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MessageList from './components/MessageList';
 import InputArea from './components/InputArea';
 import ContextPane from './components/ContextPane';
@@ -9,17 +9,127 @@ function App() {
     { role: 'assistant', content: 'Hello! I am your OS Assistant. How can I help you today?' }
   ]);
   const [status, setStatus] = useState("Ready");
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  const [selectedContext, setSelectedContext] = useState(null);
 
-  const handleSend = (text) => {
-    // Add user message
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
-    
-    // Simulate processing
+  // Expose handleResponse to Python
+  useEffect(() => {
+    if (window.eel) {
+      window.eel.expose(handleResponse, 'handle_response');
+    }
+  }, []);
+
+  const handleSend = async (text, displaySegments = null) => {
+    // Add user message - use displaySegments if available, otherwise text
+    setMessages(prev => [...prev, { role: 'user', content: displaySegments || text }]);
     setStatus("Processing");
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'assistant', content: "I've received your command. This is a demo response." }]);
+
+    // Try to find a path in the user input to update context immediately
+    // Matches paths starting with / or ~/ or ./
+    const pathMatch = text.match(/(\/[\w\-. \/]+)|(~\/[\w\-. \/]+)|(\.\/[\w\-. \/]+)/);
+    if (pathMatch) {
+        const path = pathMatch[0].trim();
+        const name = path.split(/[/\\]/).pop();
+        setSelectedContext({
+            text: name,
+            type: path.includes('.') ? 'file' : 'folder',
+            path: path
+        });
+    }
+
+    try {
+      if (window.eel) {
+        // We don't await the result anymore, we wait for the callback
+        window.eel.process_user_input(text);
+      } else {
+        // Fallback for UI testing
+        console.warn("Eel not found. Mocking response.");
+        setTimeout(() => {
+            setMessages(prev => [...prev, { role: 'assistant', content: "Eel backend not connected. (Dev Mode)" }]);
+            setStatus("Ready");
+        }, 500);
+      }
+    } catch (error) {
+      console.error("Eel Error:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
+      setStatus("Error");
+    }
+  };
+
+  const handleChipClick = (chip) => {
+      setSelectedContext({
+          text: chip.text,
+          type: chip.chipType || (chip.path.includes('.') ? 'file' : 'folder'),
+          path: chip.path
+      });
+  };
+
+  const handleResponse = (response) => {
+    console.log("Received response from Python:", response);
+    const { status: respStatus, message, action_id, risk, intent } = response;
+
+    // Update Context Pane based on Intent
+    if (intent) {
+        const path = intent.resolved_path || intent.path || intent.resolved_src || intent.source || intent.resolved_dst || intent.destination;
+        if (path && path !== "NOT FOUND") {
+            const name = path.split(/[/\\]/).pop();
+            let type = 'file';
+            if (intent.action === 'open_app') type = 'app';
+            else if (intent.action === 'list' || !name.includes('.')) type = 'folder';
+            
+            setSelectedContext({
+                text: name,
+                type: type,
+                path: path
+            });
+        }
+    }
+
+    if (respStatus === 'NEEDS_CONFIRMATION') {
+      setPendingConfirmation({ action_id, message, risk, intent });
+      setStatus("Waiting for Confirmation");
+      // Add a special message bubble for confirmation
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: message, 
+        isConfirmation: true,
+        risk: risk,
+        intent: intent
+      }]);
+    } else {
+      // SUCCESS, BLOCKED, or ERROR
+      setMessages(prev => [...prev, { role: 'assistant', content: message }]);
       setStatus("Ready");
-    }, 1000);
+    }
+  };
+
+  const confirmAction = async () => {
+    if (!pendingConfirmation) return;
+    setStatus("Executing...");
+    
+    try {
+      if (window.eel) {
+        const result = await window.eel.execute_confirmed_action(pendingConfirmation.action_id)();
+        setMessages(prev => [...prev, { role: 'assistant', content: result.message }]);
+      }
+    } catch (e) {
+        setMessages(prev => [...prev, { role: 'assistant', content: "Execution failed." }]);
+    }
+    
+    setPendingConfirmation(null);
+    setStatus("Ready");
+  };
+
+  const cancelAction = async () => {
+    if (!pendingConfirmation) return;
+    
+    if (window.eel) {
+        await window.eel.cancel_action(pendingConfirmation.action_id)();
+    }
+    
+    setMessages(prev => [...prev, { role: 'assistant', content: "Action cancelled." }]);
+    setPendingConfirmation(null);
+    setStatus("Ready");
   };
 
   return (
@@ -29,13 +139,23 @@ function App() {
         
         {/* Left Pane: Chat (40%) */}
         <div className="w-[40%] flex flex-col border-r border-zinc-800/50 bg-zinc-950/50">
-          <MessageList messages={messages} />
-          <InputArea onSend={handleSend} />
+          <MessageList 
+            messages={messages} 
+            pendingConfirmation={pendingConfirmation}
+            onConfirm={confirmAction}
+            onCancel={cancelAction}
+            onChipClick={handleChipClick}
+          />
+          <InputArea 
+            onSend={handleSend} 
+            disabled={!!pendingConfirmation} 
+            onSuggestionSelected={setSelectedContext}
+          />
         </div>
 
         {/* Right Pane: Context (60%) */}
         <div className="w-[60%] bg-zinc-950">
-          <ContextPane />
+          <ContextPane selectedItem={selectedContext} />
         </div>
       </div>
 

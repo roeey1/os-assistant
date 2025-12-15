@@ -2,3 +2,4 @@ streamlit
 ollama
 send2trash
 psutil
+eel
