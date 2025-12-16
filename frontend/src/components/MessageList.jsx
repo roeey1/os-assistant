@@ -67,7 +67,7 @@ const SecurityMessage = ({ msg, isPending, onConfirm, onCancel }) => {
   );
 };
 
-const MessageList = ({ messages, pendingConfirmation, onConfirm, onCancel, onChipClick }) => {
+const MessageList = ({ messages, pendingConfirmation, onConfirm, onCancel, onChipClick, onChipContextMenu }) => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -86,6 +86,7 @@ const MessageList = ({ messages, pendingConfirmation, onConfirm, onCancel, onChi
             <span 
               key={i}
               onClick={() => onChipClick && onChipClick(segment)}
+              onContextMenu={(e) => onChipContextMenu && onChipContextMenu(e, segment)}
               className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono mx-0.5 align-middle select-none cursor-pointer transition-colors border ${colorClasses}`}
               title={segment.path}
             >

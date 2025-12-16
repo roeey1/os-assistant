@@ -316,6 +316,39 @@ def get_suggestions(query):
 
     return suggestions[:20] # Limit total suggestions
 
+@eel.expose
+def perform_manual_action(action, params):
+    """
+    Directly executes a file operation without LLM parsing.
+    Used for context menu actions like Move, Copy, Rename, etc.
+    """
+    print(f"Manual Action: {action} with {params}")
+    
+    # Construct intent dictionary expected by _run_single_tool
+    intent = {
+        'action': action,
+        'resolved_src': params.get('source'),
+        'resolved_path': params.get('source'), # Some tools use path, some src
+        'resolved_dst': params.get('destination'),
+        'new_name': params.get('new_name'),
+        'format': params.get('format'),
+        # For specific tools that might look for other keys
+        'src': params.get('source'),
+        'dst': params.get('destination')
+    }
+    
+    try:
+        # Execute directly using the assistant's internal method
+        # We use _run_execution to ensure it gets logged to short_term_memory
+        result = assistant._run_execution(intent)
+        
+        # Log to audit logger as well
+        logger.log_action(f"Manual: {action}", intent, result)
+        
+        return {"status": "SUCCESS", "message": result}
+    except Exception as e:
+        return {"status": "ERROR", "message": str(e)}
+
 def start_app():
     # Start the app
     # If you are developing, you might want to use:

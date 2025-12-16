@@ -3,6 +3,8 @@ import MessageList from './components/MessageList';
 import InputArea from './components/InputArea';
 import ContextPane from './components/ContextPane';
 import StatusBar from './components/StatusBar';
+import ContextMenu from './components/ContextMenu';
+import ActionModal from './components/ActionModal';
 
 function App() {
   const [messages, setMessages] = useState([
@@ -11,6 +13,10 @@ function App() {
   const [status, setStatus] = useState("Ready");
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [selectedContext, setSelectedContext] = useState(null);
+  
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, item }
+  const [actionModal, setActionModal] = useState({ isOpen: false, type: null, item: null });
 
   // Expose handleResponse to Python
   useEffect(() => {
@@ -62,6 +68,114 @@ function App() {
           type: chip.chipType || (chip.path.includes('.') ? 'file' : 'folder'),
           path: chip.path
       });
+  };
+
+  const handleChipContextMenu = (e, chip) => {
+      e.preventDefault();
+      setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          item: chip
+      });
+  };
+
+  const handleContextMenuAction = (action, item) => {
+      setContextMenu(null);
+      
+      if (action === 'copy_path') {
+          navigator.clipboard.writeText(item.path);
+          // Optional: Show toast
+          return;
+      }
+
+      // Manual Actions that require Modal
+      if (['move_file', 'copy_file', 'rename_item', 'create_symlink', 'delete_file', 'compress_item'].includes(action)) {
+          setActionModal({
+              isOpen: true,
+              type: action,
+              item: item
+          });
+          return;
+      }
+
+      // Direct Manual Actions (No Modal)
+      if (['get_file_info', 'read_file', 'count_lines', 'get_file_hash'].includes(action)) {
+          handleManualAction(action, { source: item.path });
+          return;
+      }
+
+      let command = "";
+      if (action === 'open_file') {
+          // Use backend tool for opening file
+          handleManualAction('open_file', { source: item.path });
+          return;
+      } else if (action === 'reveal') {
+          command = `open folder containing "${item.path}"`;
+      }
+
+      if (command) {
+          handleSend(command);
+      }
+  };
+
+  const handleManualAction = async (actionType, params) => {
+      // Close modal if open
+      setActionModal({ isOpen: false, type: null, item: null });
+      
+      // Add a message to chat saying we are doing it
+      const actionNames = {
+          'move_file': 'Moving',
+          'copy_file': 'Copying',
+          'rename_item': 'Renaming',
+          'create_symlink': 'Creating shortcut for',
+          'delete_file': 'Deleting',
+          'compress_item': 'Compressing',
+          'get_file_info': 'Getting info for',
+          'read_file': 'Reading',
+          'count_lines': 'Counting lines in',
+          'get_file_hash': 'Hashing',
+          'open_file': 'Opening'
+      };
+      
+      const displayMsg = `${actionNames[actionType] || actionType} ${params.source.split('/').pop()}...`;
+      setMessages(prev => [...prev, { role: 'user', content: displayMsg }]);
+      setStatus("Executing...");
+
+      try {
+          if (window.eel) {
+              const result = await window.eel.perform_manual_action(actionType, params)();
+              if (result.status === 'SUCCESS') {
+                  setMessages(prev => [...prev, { role: 'assistant', content: result.message }]);
+              } else {
+                  setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${result.message}` }]);
+              }
+          } else {
+              // Mock
+              console.log("Mock Manual Action:", actionType, params);
+              setTimeout(() => {
+                  setMessages(prev => [...prev, { role: 'assistant', content: `[Mock] Successfully executed ${actionType}` }]);
+              }, 1000);
+          }
+      } catch (e) {
+          setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
+      }
+      setStatus("Ready");
+  };
+
+  const handleModalConfirm = (inputValue) => {
+      const { type, item } = actionModal;
+      const params = { source: item.path };
+      
+      if (type === 'rename_item') {
+          params.new_name = inputValue;
+      } else if (['move_file', 'copy_file', 'create_symlink'].includes(type)) {
+          params.destination = inputValue;
+      } else if (type === 'compress_item') {
+          params.format = inputValue || 'zip';
+      }
+      // For delete_file, inputValue is ignored/empty
+      
+      handleManualAction(type, params);
   };
 
   const handleResponse = (response) => {
@@ -145,11 +259,13 @@ function App() {
             onConfirm={confirmAction}
             onCancel={cancelAction}
             onChipClick={handleChipClick}
+            onChipContextMenu={handleChipContextMenu}
           />
           <InputArea 
             onSend={handleSend} 
             disabled={!!pendingConfirmation} 
             onSuggestionSelected={setSelectedContext}
+            onChipContextMenu={handleChipContextMenu}
           />
         </div>
 
@@ -161,6 +277,27 @@ function App() {
 
       {/* Bottom Toolbar */}
       <StatusBar status={status} />
+
+      {/* Context Menu Overlay */}
+      {contextMenu && (
+        <ContextMenu 
+          x={contextMenu.x} 
+          y={contextMenu.y} 
+          item={contextMenu.item} 
+          onClose={() => setContextMenu(null)}
+          onAction={handleContextMenuAction}
+        />
+      )}
+
+      {/* Action Modal */}
+      {actionModal.isOpen && (
+        <ActionModal 
+          action={actionModal.type}
+          item={actionModal.item}
+          onClose={() => setActionModal({ ...actionModal, isOpen: false })}
+          onConfirm={handleModalConfirm}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Folder, File, Zap, Keyboard } from 'lucide-react';
 
-const InputArea = ({ onSend, disabled, onSuggestionSelected }) => {
+const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }) => {
   const [triggerText, setTriggerText] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -149,6 +149,18 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected }) => {
           // We need to reconstruct the suggestion object or pass the original one
           // Since we are in a closure, 'suggestion' is available here!
           if (onSuggestionSelected) onSuggestionSelected(suggestion);
+      };
+
+      // Add context menu handler
+      chip.oncontextmenu = (e) => {
+          if (onChipContextMenu) {
+              // Pass the chip data in the format expected by ContextMenu
+              onChipContextMenu(e, {
+                  text: suggestion.text,
+                  chipType: suggestion.type,
+                  path: suggestion.path || suggestion.text
+              });
+          }
       };
       
       // Create Space
