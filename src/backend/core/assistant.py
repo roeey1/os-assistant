@@ -12,7 +12,8 @@ from src.backend.core.guard import SecurityManager, RiskLevel
 
 class OSAssistant:
     def __init__(self):
-        self.llm = LocalLLMClient(model_name="llama3")
+        self.llm = LocalLLMClient(model_name="llama3.1")
+        print(f"--- OS Assistant initialized with model: {self.llm.model_name} ---")
         self.files = FileManager()
         self.sys_ops = SystemOps()
         self.sys_info = SystemInfo()
@@ -62,6 +63,16 @@ class OSAssistant:
                         if key == 'source': intent['resolved_src'] = intent[key]
                         if key == 'path': intent['resolved_path'] = intent[key]
 
+                # Explicitly resolve destination to ensure absolute path for UI cache updates
+                if 'destination' in intent:
+                    p = self._resolve_path(intent['destination'])
+                    if p != "NOT FOUND":
+                        intent['resolved_dst'] = str(p)
+                    else:
+                        # If not found (e.g. new file/folder), resolve relative to CWD
+                        # This ensures we have a valid absolute path
+                        intent['resolved_dst'] = str(Path.cwd() / intent['destination'])
+
                 is_allowed, reason, risk = self.guard.validate_action(action, intent)
                 if not is_allowed or risk == RiskLevel.BLOCKED:
                     self._add_to_memory(action, "BLOCKED", reason)
@@ -75,13 +86,18 @@ class OSAssistant:
         except Exception as e:
             return {"status": "ERROR", "message": str(e), "intent": intent}
 
-    def execute_confirmed_action(self, action_id: str) -> dict:
+    def execute_confirmed_action(self, action_id: str, updated_batch_targets: list = None) -> dict:
         if action_id not in self._pending_actions:
             return {"status": "ERROR", "message": "Timeout."}
         intent = self._pending_actions.pop(action_id)
+        
+        # Apply updates from UI if any
+        if updated_batch_targets is not None and 'batch_targets' in intent:
+            intent['batch_targets'] = updated_batch_targets
+            
         try:
             result = self._run_execution(intent)
-            return {"status": "SUCCESS", "message": result}
+            return {"status": "SUCCESS", "message": result, "intent": intent}
         except Exception as e:
             return {"status": "ERROR", "message": str(e)}
 

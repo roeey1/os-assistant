@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Folder, File, Zap, Keyboard } from 'lucide-react';
+import { Send, Paperclip, Folder, File, Zap, Keyboard, Clock } from 'lucide-react';
 
 const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }) => {
   const [triggerText, setTriggerText] = useState("");
@@ -10,19 +10,60 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
   
   const editorRef = useRef(null);
   const lastContextRef = useRef(null);
+  const suggestionsListRef = useRef(null);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (showSuggestions && suggestionsListRef.current) {
+      const selectedElement = suggestionsListRef.current.children[selectedIndex];
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex, showSuggestions]);
 
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (autocompleteEnabled && triggerText.trim().length > 0 && window.eel) {
+      // FIX: Don't show suggestions if input is empty or just whitespace
+      if (!triggerText || !triggerText.trim()) {
+          setShowSuggestions(false);
+          lastContextRef.current = null;
+          if (onSuggestionSelected) onSuggestionSelected(null);
+          return;
+      }
+
+      // Extract the last word being typed to use as trigger
+      const words = triggerText.split(/\s+/);
+      const currentWord = words[words.length - 1];
+      
+      // Show suggestions if we have text OR if we are focused (empty text)
+      // But only if autocomplete is enabled
+      if (autocompleteEnabled && window.eel) {
         try {
-          const results = await window.eel.get_suggestions(triggerText)();
-          setSuggestions(results);
-          setShowSuggestions(results.length > 0);
+          let results = [];
+          // Only fetch backend suggestions if we have a word to complete
+          if (currentWord && currentWord.length > 0) {
+             results = await window.eel.get_suggestions(triggerText)();
+          }
+          
+          // Merge with history
+          // Filter history based on the current word being typed
+          const history = JSON.parse(localStorage.getItem('os_assistant_history') || '[]');
+          const historyMatches = history.filter(h => {
+            if (!currentWord) return false; // FIX: Don't show history if no text typed
+            return h.text.toLowerCase().includes(currentWord.toLowerCase()) &&
+                   !results.some(r => r.path === h.path); // Avoid duplicates
+          }).map(h => ({ ...h, type: 'history', originalType: h.type }));
+          
+          const finalSuggestions = [...historyMatches.slice(0, 5), ...results];
+          
+          setSuggestions(finalSuggestions);
+          setShowSuggestions(finalSuggestions.length > 0);
           setSelectedIndex(0);
           
-          if (results.length > 0) {
-            lastContextRef.current = results[0];
-            if (onSuggestionSelected) onSuggestionSelected(results[0]);
+          if (finalSuggestions.length > 0) {
+            lastContextRef.current = finalSuggestions[0];
+            if (onSuggestionSelected) onSuggestionSelected(finalSuggestions[0]);
           } else {
              lastContextRef.current = null;
              if (onSuggestionSelected) onSuggestionSelected(null);
@@ -42,6 +83,21 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
     const debounce = setTimeout(fetchSuggestions, 200);
     return () => clearTimeout(debounce);
   }, [triggerText, onSuggestionSelected, autocompleteEnabled]);
+
+  const addToHistory = (item) => {
+      if (!item || !item.text) return;
+      const history = JSON.parse(localStorage.getItem('os_assistant_history') || '[]');
+      // Remove existing if present to move to top
+      const filtered = history.filter(h => h.path !== item.path);
+      // Add to top
+      const newHistory = [{ 
+          text: item.text, 
+          path: item.path, 
+          type: item.type === 'history' ? item.originalType : item.type 
+      }, ...filtered].slice(0, 50); // Keep last 50
+      
+      localStorage.setItem('os_assistant_history', JSON.stringify(newHistory));
+  };
 
   const handleInput = () => {
     const selection = window.getSelection();
@@ -132,15 +188,18 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
       const chip = document.createElement('span');
       chip.contentEditable = "false";
       
+      // Use original type if it's a history item
+      const type = suggestion.type === 'history' ? suggestion.originalType : suggestion.type;
+
       let colorClasses = "bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30"; // Default file
-      if (suggestion.type === 'action') colorClasses = "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30";
-      if (suggestion.type === 'folder') colorClasses = "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30";
+      if (type === 'action') colorClasses = "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30";
+      if (type === 'folder') colorClasses = "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30";
 
       chip.className = `inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono mx-0.5 align-middle select-none cursor-pointer transition-colors border ${colorClasses}`;
       
       chip.title = suggestion.path || suggestion.text;
       chip.setAttribute('data-full-path', suggestion.path || suggestion.text);
-      chip.setAttribute('data-type', suggestion.type);
+      chip.setAttribute('data-type', type);
       chip.textContent = suggestion.text;
       
       // Add click handler for preview
@@ -157,7 +216,7 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
               // Pass the chip data in the format expected by ContextMenu
               onChipContextMenu(e, {
                   text: suggestion.text,
-                  chipType: suggestion.type,
+                  chipType: type,
                   path: suggestion.path || suggestion.text
               });
           }
@@ -183,6 +242,11 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
       setTriggerText("");
       setShowSuggestions(false);
       
+      // Add to history (only if not an action)
+      if (type !== 'action') {
+          addToHistory(suggestion);
+      }
+
       lastContextRef.current = suggestion;
       if (onSuggestionSelected) onSuggestionSelected(suggestion);
       
@@ -233,7 +297,7 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
             <span>Suggestions</span>
             <span className="text-[9px] text-zinc-600">Tab to select</span>
           </div>
-          <ul>
+          <ul ref={suggestionsListRef}>
             {suggestions.map((s, i) => (
               <li key={i} 
                   className={`px-3 py-2.5 flex items-center gap-3 cursor-pointer text-sm transition-all border-l-2 ${
@@ -244,10 +308,12 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
                   onClick={() => applySuggestion(s)}
               >
                 <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 ${
+                  s.type === 'history' ? 'bg-purple-500/10 text-purple-400' :
                   s.type === 'action' ? 'bg-amber-500/10 text-amber-500' :
                   s.type === 'folder' ? 'bg-blue-500/10 text-blue-400' :
                   'bg-zinc-700/30 text-zinc-400'
                 }`}>
+                  {s.type === 'history' && <Clock size={14} />}
                   {s.type === 'action' && <Zap size={14} />}
                   {s.type === 'folder' && <Folder size={14} />}
                   {s.type === 'file' && <File size={14} />}
@@ -261,6 +327,11 @@ const InputArea = ({ onSend, disabled, onSuggestionSelected, onChipContextMenu }
                     {s.type === 'action' && (
                       <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500/50 bg-amber-500/5 px-1.5 py-0.5 rounded">
                         CMD
+                      </span>
+                    )}
+                    {s.type === 'history' && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-purple-500/50 bg-purple-500/5 px-1.5 py-0.5 rounded">
+                        RECENT
                       </span>
                     )}
                   </div>

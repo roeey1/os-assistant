@@ -141,6 +141,19 @@ class LocalLLMClient:
         EXAMPLE 5 (Archive):
         User: "Zip the Photos folder"
         Response: {"action": "compress_item", "path": "Photos", "format": "zip"}
+
+        
+        EXAMPLE 6 (Batch Move):
+        User: "Move all pdf files from Desktop to Documents"
+        Response: {
+          "action": "move_file",
+          "scope": "batch",
+          "source": "Desktop",
+          "destination": "Documents",
+          "filters": {
+            "extension": "pdf"
+          }
+        }
         """
         # 2. Inject History (The "Memory")
         if history_context:
@@ -161,6 +174,7 @@ class LocalLLMClient:
             # Use the robust cleaning method (now returns the JSON string or raises error)
             cleaned_json_string = self._extract_json_string(raw_content)
             parsed_intent = json.loads(cleaned_json_string)
+            parsed_intent = self._sanitize_wildcards(parsed_intent)
 
             # Debug Print
             print(f"\n[DEBUG] LLM Raw JSON Response: {parsed_intent}\n")
@@ -221,3 +235,49 @@ class LocalLLMClient:
             pass
 
         raise ValueError("No valid JSON object found in LLM response")
+    def _sanitize_wildcards(self, intent: dict) -> dict:
+        """
+        Fixes LLM mistakes where it puts wildcards (e.g., /path/*.pdf) directly in the path.
+        Converts them into proper 'batch' scope and 'filters'.
+        """
+        import re
+        
+        # Keys that might contain paths
+        path_keys = ['source', 'path', 'destination']
+        
+        # Regex to catch path ending in /*.ext or \*.ext
+        # Group 1: The clean path
+        # Group 2: The extension (without dot)
+        wildcard_pattern = r"^(.*)[/\\]\*\.(\w+)$"
+
+        for key in path_keys:
+            if key not in intent:
+                continue
+
+            value = intent[key]
+            match = re.search(wildcard_pattern, value)
+
+            if match:
+                clean_path = match.group(1)
+                extension = match.group(2)
+
+                # 1. Clean the path in the JSON
+                intent[key] = clean_path
+                
+                # 2. Only apply filters if the wildcard was in 'source' or 'path'
+                # (Wildcards in destination are usually just errors to be removed)
+                if key in ['source', 'path']:
+                    intent['scope'] = 'batch'
+                    
+                    if 'filters' not in intent:
+                        intent['filters'] = {}
+                    
+                    # Add extension to filters
+                    # We use a list to be safe, or just append if it exists
+                    if 'extensions' not in intent['filters']:
+                         intent['filters']['extensions'] = []
+                    
+                    if extension not in intent['filters']['extensions']:
+                        intent['filters']['extensions'].append(extension)
+
+        return intent

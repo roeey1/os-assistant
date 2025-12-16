@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import MessageList from './components/MessageList';
 import InputArea from './components/InputArea';
 import ContextPane from './components/ContextPane';
@@ -13,6 +14,7 @@ function App() {
   const [status, setStatus] = useState("Ready");
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [selectedContext, setSelectedContext] = useState(null);
+  const [showPreview, setShowPreview] = useState(true);
   
   // Context Menu State
   const [contextMenu, setContextMenu] = useState(null); // { x, y, item }
@@ -24,6 +26,55 @@ function App() {
       window.eel.expose(handleResponse, 'handle_response');
     }
   }, []);
+
+  // Update cache when files are moved/renamed
+  const updateFileCache = (oldPath, newPath) => {
+      if (!oldPath || !newPath) return;
+      
+      // 1. Update LocalStorage History
+      const history = JSON.parse(localStorage.getItem('os_assistant_history') || '[]');
+      let updated = false;
+      const newHistory = history.map(h => {
+          if (h.path === oldPath) {
+              updated = true;
+              // Update path and text if text was the filename
+              const oldName = oldPath.split(/[/\\]/).pop();
+              const newName = newPath.split(/[/\\]/).pop();
+              return { 
+                  ...h, 
+                  path: newPath,
+                  text: h.text === oldName ? newName : h.text
+              };
+          }
+          return h;
+      });
+      
+      if (updated) {
+          localStorage.setItem('os_assistant_history', JSON.stringify(newHistory));
+      }
+      
+      // 2. Update Chat Messages (Chips)
+      // This is tricky because messages contain HTML/Components. 
+      // We need to update the 'content' array if it has chips.
+      setMessages(prevMessages => prevMessages.map(msg => {
+          if (Array.isArray(msg.content)) {
+              const newContent = msg.content.map(segment => {
+                  if (segment.type === 'chip' && segment.path === oldPath) {
+                      const oldName = oldPath.split(/[/\\]/).pop();
+                      const newName = newPath.split(/[/\\]/).pop();
+                      return {
+                          ...segment,
+                          path: newPath,
+                          text: segment.text === oldName ? newName : segment.text
+                      };
+                  }
+                  return segment;
+              });
+              return { ...msg, content: newContent };
+          }
+          return msg;
+      }));
+  };
 
   const handleSend = async (text, displaySegments = null) => {
     // Add user message - use displaySegments if available, otherwise text
@@ -178,6 +229,44 @@ function App() {
       handleManualAction(type, params);
   };
 
+  const handleFileOperationSuccess = (intent) => {
+      if (!intent) return;
+      const action = intent.action;
+      
+      if (action === 'move_file' || action === 'rename_item') {
+          // Single file op
+          const oldPath = intent.resolved_src || intent.resolved_path;
+          let newPath = intent.resolved_dst;
+          
+          // If rename, newPath might be constructed from new_name
+          if (action === 'rename_item' && intent.new_name && oldPath) {
+              const sep = oldPath.includes('\\') ? '\\' : '/';
+              const dir = oldPath.substring(0, oldPath.lastIndexOf(sep));
+              newPath = `${dir}${sep}${intent.new_name}`;
+          }
+          // If move, check if dst is dir
+          else if (action === 'move_file' && oldPath && newPath) {
+              const sep = newPath.includes('\\') ? '\\' : '/';
+              const oldName = oldPath.split(/[/\\]/).pop();
+              
+              // Heuristic: Check if newPath looks like a file (has extension)
+              const hasExtension = newPath.split(/[/\\]/).pop().includes('.');
+              const endsWithSep = newPath.endsWith('/') || newPath.endsWith('\\');
+              
+              // If it doesn't look like a file (no extension) and doesn't end with the filename
+              // assume it's a directory and append the filename
+              if (!endsWithSep && !hasExtension && !newPath.endsWith(oldName)) {
+                   newPath += sep + oldName;
+              }
+          }
+
+          if (oldPath && newPath) {
+              console.log(`Updating cache: ${oldPath} -> ${newPath}`);
+              updateFileCache(oldPath, newPath);
+          }
+      }
+  };
+
   const handleResponse = (response) => {
     console.log("Received response from Python:", response);
     const { status: respStatus, message, action_id, risk, intent } = response;
@@ -214,17 +303,27 @@ function App() {
       // SUCCESS, BLOCKED, or ERROR
       setMessages(prev => [...prev, { role: 'assistant', content: message }]);
       setStatus("Ready");
+      
+      // Check for file operations to update cache
+      if (respStatus === 'SUCCESS' && intent) {
+          handleFileOperationSuccess(intent);
+      }
     }
   };
 
-  const confirmAction = async () => {
+  const confirmAction = async (updatedBatchTargets = null) => {
     if (!pendingConfirmation) return;
     setStatus("Executing...");
     
     try {
       if (window.eel) {
-        const result = await window.eel.execute_confirmed_action(pendingConfirmation.action_id)();
+        const result = await window.eel.execute_confirmed_action(pendingConfirmation.action_id, updatedBatchTargets)();
         setMessages(prev => [...prev, { role: 'assistant', content: result.message }]);
+        
+        // Trigger cache update if success
+        if (result.status === 'SUCCESS' && result.intent) {
+             handleFileOperationSuccess(result.intent);
+        }
       }
     } catch (e) {
         setMessages(prev => [...prev, { role: 'assistant', content: "Execution failed." }]);
@@ -249,10 +348,10 @@ function App() {
   return (
     <div className="w-[850px] h-[600px] bg-zinc-950 rounded-xl border border-zinc-800 shadow-2xl flex flex-col overflow-hidden font-sans text-zinc-100 relative">
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         
-        {/* Left Pane: Chat (40%) */}
-        <div className="w-[40%] flex flex-col border-r border-zinc-800/50 bg-zinc-950/50">
+        {/* Left Pane: Chat */}
+        <div className={`flex flex-col border-r border-zinc-800/50 bg-zinc-950/50 transition-all duration-300 ease-in-out ${showPreview ? 'w-[40%]' : 'w-full'}`}>
           <MessageList 
             messages={messages} 
             pendingConfirmation={pendingConfirmation}
@@ -269,10 +368,20 @@ function App() {
           />
         </div>
 
-        {/* Right Pane: Context (60%) */}
-        <div className="w-[60%] bg-zinc-950">
+        {/* Right Pane: Context */}
+        <div className={`bg-zinc-950 transition-all duration-300 ease-in-out overflow-hidden ${showPreview ? 'w-[60%]' : 'w-0 border-l-0'}`}>
           <ContextPane selectedItem={selectedContext} />
         </div>
+
+        {/* Toggle Preview Button */}
+        <button 
+            onClick={() => setShowPreview(!showPreview)}
+            className="absolute top-4 right-4 z-50 p-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 rounded-md border border-zinc-700/50 shadow-lg backdrop-blur-sm transition-colors"
+            title={showPreview ? "Hide Preview" : "Show Preview"}
+        >
+            {showPreview ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+
       </div>
 
       {/* Bottom Toolbar */}

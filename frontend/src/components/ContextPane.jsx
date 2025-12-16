@@ -93,6 +93,8 @@ const ContextPane = ({ selectedItem }) => {
              </>
            ) : preview?.type === 'image' ? (
              <img src={preview.content} alt="Preview" className="w-full h-full object-contain" />
+           ) : preview?.type === 'pdf' ? (
+             <iframe src={preview.content} className="w-full h-full border-0" title="PDF Preview" />
            ) : preview?.type === 'text' ? (
              <div className="w-full h-full p-4 overflow-auto text-xs font-mono text-zinc-400 whitespace-pre-wrap text-left">
                {preview.content}

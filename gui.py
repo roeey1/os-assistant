@@ -5,6 +5,7 @@ import threading
 import subprocess
 import base64
 import mimetypes
+import pypdf
 
 # Add the current directory to Python path
 sys.path.append(".")
@@ -78,13 +79,13 @@ def process_user_input(user_input):
     return "Processing started..."
 
 @eel.expose
-def execute_confirmed_action(action_id):
+def execute_confirmed_action(action_id, updated_batch_targets=None):
     """
     Called when user clicks 'Confirm' in the UI.
     """
     print(f"Executing confirmed action: {action_id}")
     try:
-        result = assistant.execute_confirmed_action(action_id)
+        result = assistant.execute_confirmed_action(action_id, updated_batch_targets)
         
         # Log the success
         # Note: We'd ideally want the original intent here for logging, 
@@ -132,6 +133,30 @@ def get_file_preview(path):
     mime_type, _ = mimetypes.guess_type(path)
     
     try:
+        # PDF - Extract Text Content
+        if mime_type == 'application/pdf' or path.lower().endswith('.pdf'):
+             if os.path.getsize(path) > 10 * 1024 * 1024: # 10MB limit
+                return {"type": "error", "content": "PDF too large to preview"}
+             
+             try:
+                 reader = pypdf.PdfReader(path)
+                 text_content = ""
+                 # Extract text from first 5 pages to avoid huge payloads
+                 for i, page in enumerate(reader.pages[:5]):
+                     text_content += f"--- Page {i+1} ---\n"
+                     text_content += page.extract_text() + "\n\n"
+                 
+                 if len(reader.pages) > 5:
+                     text_content += f"\n... ({len(reader.pages) - 5} more pages truncated)"
+                     
+                 if not text_content.strip():
+                     # Fallback to binary message if no text found (e.g. scanned image)
+                     return {"type": "text", "content": "[PDF contains no extractable text (Scanned/Image)]"}
+                     
+                 return {"type": "text", "content": text_content}
+             except Exception as e:
+                 return {"type": "error", "content": f"Failed to extract PDF text: {str(e)}"}
+
         # Image
         if mime_type and mime_type.startswith('image'):
             # Limit image size check could be good here, but for now just read

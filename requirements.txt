@@ -3,3 +3,5 @@ ollama
 send2trash
 psutil
 eel
+tabulate
+pypdf

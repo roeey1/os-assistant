@@ -1,14 +1,45 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, User, AlertTriangle, Check, X, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { Bot, User, AlertTriangle, Check, X, ChevronDown, ChevronUp, Info, Trash2 } from 'lucide-react';
 
-const SecurityMessage = ({ msg, isPending, onConfirm, onCancel }) => {
+const SecurityMessage = ({ msg, isPending, onConfirm, onCancel, onChipClick }) => {
   const { intent, risk, content } = msg;
   const isGeneric = content === "Action allowed.";
-  const [showDetails, setShowDetails] = useState(isGeneric);
+  // Always show details by default for security alerts so user sees what they are confirming
+  const [showDetails, setShowDetails] = useState(true);
+  
+  // State for batch targets
+  const [activeBatchTargets, setActiveBatchTargets] = useState(intent?.batch_targets || []);
 
   // Extract relevant details from intent
   const action = intent?.action || "Unknown";
   const target = intent?.resolved_path || intent?.path || intent?.resolved_src || intent?.source || intent?.destination || "Unknown";
+  const isBatch = !!intent?.batch_targets;
+  
+  let batchDetails = null;
+  if (isBatch && activeBatchTargets.length > 0) {
+      const firstPath = activeBatchTargets[0];
+      const sep = firstPath.includes('\\') ? '\\' : '/';
+      const lastSep = firstPath.lastIndexOf(sep);
+      const commonDir = firstPath.substring(0, lastSep);
+      
+      const files = activeBatchTargets.map(p => ({
+          fullPath: p,
+          fileName: p.split(sep).pop()
+      }));
+      batchDetails = { commonDir, files };
+  }
+  
+  const handleRemoveFile = (pathToRemove) => {
+      setActiveBatchTargets(prev => prev.filter(p => p !== pathToRemove));
+  };
+
+  const handleConfirmClick = () => {
+      if (isBatch) {
+          onConfirm(activeBatchTargets);
+      } else {
+          onConfirm();
+      }
+  };
   
   return (
     <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 w-full">
@@ -39,10 +70,76 @@ const SecurityMessage = ({ msg, isPending, onConfirm, onCancel }) => {
              <span className="text-zinc-500 w-16">Action:</span>
              <span className="text-zinc-300 font-mono">{action}</span>
            </div>
-           <div className="flex gap-2">
-             <span className="text-zinc-500 w-16 shrink-0">Target:</span>
-             <span className="text-zinc-300 font-mono break-all">{target}</span>
-           </div>
+           
+           {isBatch ? (
+             <div className="flex flex-col gap-2 mt-1">
+               <div className="flex gap-2">
+                 <span className="text-zinc-500 w-16 shrink-0">Source:</span>
+                 <span className="text-zinc-300 font-mono break-all">{batchDetails?.commonDir || "Multiple Sources"}</span>
+               </div>
+               <div className="flex gap-2">
+                 <span className="text-zinc-500 w-16 shrink-0">Files:</span>
+                 <div className="flex flex-col gap-1 w-full">
+                   <span className="text-zinc-400 italic mb-1">{activeBatchTargets.length} files selected</span>
+                   
+                   {activeBatchTargets.length > 0 ? (
+                   <div className="max-h-40 overflow-y-auto border border-zinc-700/50 rounded bg-zinc-800/30">
+                     <table className="w-full text-left border-collapse">
+                       <thead className="bg-zinc-800/80 sticky top-0">
+                         <tr>
+                           <th className="p-2 text-zinc-400 font-medium border-b border-zinc-700/50">File Name</th>
+                           {isPending && <th className="p-2 text-zinc-400 font-medium border-b border-zinc-700/50 w-8"></th>}
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {batchDetails.files.map((item, i) => {
+                           const { fullPath, fileName } = item;
+                           const isFolder = !fileName.includes('.'); // Simple heuristic
+                           const colorClasses = isFolder 
+                             ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30"
+                             : "bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30";
+                           
+                           return (
+                             <tr key={i} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/50 group">
+                               <td className="p-2">
+                                 <span 
+                                   onClick={() => onChipClick && onChipClick({ text: fileName, path: fullPath, type: isFolder ? 'folder' : 'file' })}
+                                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono cursor-pointer transition-colors border ${colorClasses}`}
+                                 >
+                                   {fileName}
+                                 </span>
+                               </td>
+                               {isPending && (
+                                 <td className="p-2 text-right">
+                                   <button 
+                                     onClick={() => handleRemoveFile(fullPath)}
+                                     className="text-zinc-600 hover:text-red-400 transition-colors p-1 rounded hover:bg-zinc-700/50 opacity-0 group-hover:opacity-100"
+                                     title="Remove from batch"
+                                   >
+                                     <Trash2 size={12} />
+                                   </button>
+                                 </td>
+                               )}
+                             </tr>
+                           );
+                         })}
+                       </tbody>
+                     </table>
+                   </div>
+                   ) : (
+                     <div className="text-zinc-500 italic p-2 border border-zinc-800 rounded bg-zinc-900/30">
+                       No files selected. Action will be skipped for empty batch.
+                     </div>
+                   )}
+                 </div>
+               </div>
+             </div>
+           ) : (
+             <div className="flex gap-2">
+               <span className="text-zinc-500 w-16 shrink-0">Target:</span>
+               <span className="text-zinc-300 font-mono break-all">{target}</span>
+             </div>
+           )}
         </div>
       )}
       
@@ -50,8 +147,12 @@ const SecurityMessage = ({ msg, isPending, onConfirm, onCancel }) => {
       {isPending && (
         <div className="flex gap-2 mt-2">
           <button 
-            onClick={onConfirm}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-md text-xs font-medium transition-colors"
+            onClick={handleConfirmClick}
+            disabled={isBatch && activeBatchTargets.length === 0}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
+              ${isBatch && activeBatchTargets.length === 0 
+                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' 
+                : 'bg-amber-600 hover:bg-amber-500 text-white'}`}
           >
             <Check size={12} /> Confirm
           </button>
@@ -122,6 +223,7 @@ const MessageList = ({ messages, pendingConfirmation, onConfirm, onCancel, onChi
                 isPending={idx === messages.length - 1 && pendingConfirmation}
                 onConfirm={onConfirm}
                 onCancel={onCancel}
+                onChipClick={onChipClick}
               />
             ) : (
               renderContent(msg.content)
